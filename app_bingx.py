@@ -5,23 +5,21 @@ import pandas_ta as ta
 import plotly.graph_objects as go
 import requests
 
-st.set_page_config(page_title="Bot BingX", layout="wide")
+st.set_page_config(page_title="Bot BingX")
 st.title("Bot BingX - Signal + Telegram")
 
-BINGX_API_KEY = st.secrets.get("BINGX_API_KEY", "")
-BINGX_API_SECRET = st.secrets.get("BINGX_API_SECRET", "")
-TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
+TOKEN = st.secrets.get("TELEGRAM_TOKEN", "")
+CHAT = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
 def send_telegram(msg):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        st.warning("Telegram non configuré")
+    if not TOKEN or not CHAT:
+        st.warning("Telegram non configure")
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT, "text": msg})
 
-symbol = st.sidebar.selectbox("Paire", ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
-timeframe = st.sidebar.selectbox("Timeframe", ["1m", "5m", "15m", "1h"])
+symbol = st.sidebar.selectbox("Paire", ["BTC/USDT","ETH/USDT","SOL/USDT"])
+timeframe = st.sidebar.selectbox("Timeframe", ["1m","5m","15m","1h"])
 
 if st.sidebar.button("Tester Telegram"):
     send_telegram(f"Test Bot {symbol} OK")
@@ -29,8 +27,8 @@ if st.sidebar.button("Tester Telegram"):
 
 exchange = ccxt.bingx()
 ticker = exchange.fetch_ticker(symbol)
-st.metric(symbol, f"{ticker['last']}")
-ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=100)
+st.metric(symbol, ticker['last'])
+
 ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=100)
 df = pd.DataFrame(ohlcv, columns=['time','open','high','low','close','vol'])
 df['rsi'] = ta.rsi(df['close'], length=14)
