@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 import requests
 import plotly.graph_objects as go
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Bot BingX FYL", layout="wide")
-st.title("🚀 Bot BingX FYL - V6.1")
-st.write("Connecté en direct à BingX API - Fix colonnes")
+st.title("🚀 Bot BingX FYL - V6.2")
+st.write("Connecté en direct à BingX API")
 
 def get_bingx_data(symbol="BTC-USDT", interval="15m", limit=200):
     url = "https://open-api.bingx.com/openApi/spot/v1/market/kline"
@@ -15,31 +16,30 @@ def get_bingx_data(symbol="BTC-USDT", interval="15m", limit=200):
     if j.get("code")!= 0:
         st.error(f"BingX Error: {j}")
         return None
-
     data = j.get("data", [])
-    if not data:
-        st.error("BingX vide")
-        return None
-
-    # Fix: BingX peut renvoyer 6 ou plus colonnes, on prend dynamiquement
-    # Format officiel: [open, high, low, close, volume, timestamp] ou [close, high...]
-    # On sécurise
     df = pd.DataFrame(data)
-    # Les 2 derniers sont toujours volume et timestamp chez BingX
-    # Donc on prend les 6 colonnes dans l'ordre
     if df.shape[1] >= 6:
         df = df.iloc[:, :6]
         df.columns = ['open','high','low','close','volume','timestamp']
     else:
-        st.error(f"Format inattendu: {data[0]}")
         return None
+    # Si timestamp bug, on recrée les dates nous-même
+    try:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        # Si ça donne 1970, c'est bugué -> on recrée
+        if df['timestamp'].iloc[-1].year < 2020:
+            raise ValueError("timestamp 1970")
+    except:
+        # On recrée des dates récentes manuellement
+        freq_map = {"15m":"15min","1h":"1H","4h":"4H","1d":"1D"}
+        freq = freq_map.get(interval, "15min")
+        df['timestamp'] = pd.date_range(end=datetime.now(), periods=len(df), freq=freq)
 
-    if df.iloc[0]['timestamp'] > df.iloc[-1]['timestamp']:
-        df = df.iloc[::-1]
-
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     for c in ['close','open','high','low']:
         df[c] = pd.to_numeric(df[c], errors='coerce')
+    
+    if df.iloc[0]['timestamp'] > df.iloc[-1]['timestamp']:
+        df = df.iloc[::-1]
     return df
 
 def rsi(series, period=14):
@@ -74,14 +74,15 @@ if st.sidebar.button("🔍 Analyser BingX"):
             st.warning(f"🟡 NEUTRE BingX - RSI {last_rsi:.2f}")
 
         c1, c2 = st.columns(2)
-        c1.metric(f"Prix {symbol} BingX", f"${last_price:.4f}")
+        c1.metric(f"Prix {symbol}", f"${last_price:.2f}")
         c2.metric("RSI", f"{last_rsi:.2f}")
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['close'], name="Prix BingX", line=dict(color='#ffcc00')))
-        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA20'], name="EMA20"))
-        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA50'], name="EMA50"))
-        fig.update_layout(height=500, template="plotly_dark")
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['close'], name="Prix BingX", line=dict(color='#ffcc00', width=2)))
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA20'], name="EMA20", line=dict(color='red')))
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA50'], name="EMA50", line=dict(color='green')))
+        fig.update_layout(height=600, template="plotly_dark", title=f"{symbol} - Live BingX")
         st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(df.tail(10))
 else:
     st.info("👈 Clique sur Analyser BingX")
