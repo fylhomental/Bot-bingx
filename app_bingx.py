@@ -28,7 +28,7 @@ if st.sidebar.button("Tester Telegram"):
     st.success("Message envoye!")
 
 exchange = ccxt.bingx()
-ticker = exchange.fetch_ticker(symbol)
+st.metric(symbol, f"{ticker['last']}")
 st.metric(symbol, f"{ticker['last']}")
 
 ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=100)
