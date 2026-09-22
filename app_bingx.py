@@ -28,9 +28,9 @@ if st.sidebar.button("Tester Telegram"):
     st.success("Message envoye!")
 
 exchange = ccxt.bingx()
+ticker = exchange.fetch_ticker(symbol)
 st.metric(symbol, f"{ticker['last']}")
-st.metric(symbol, f"{ticker['last']}")
-
+ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=100)
 ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=100)
 df = pd.DataFrame(ohlcv, columns=['time','open','high','low','close','vol'])
 df['rsi'] = ta.rsi(df['close'], length=14)
