@@ -14,6 +14,7 @@ jobs:
       - run: pip install pandas requests
       - run: python bot_auto.py
         env:
-          TELEGRAM_TOKEN: ${{ secrets.8838152453:AAEI37Kh-0BEurFlVSnbQEVOalqW21f1ljQ
- }}
-          TELEGRAM_CHAT_ID: ${{ secrets.1233249921}}
+                  TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    
