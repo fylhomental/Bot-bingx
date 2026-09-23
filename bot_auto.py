@@ -52,15 +52,17 @@ for sym in SYMBOLS:
     rs = float(df['rsi'].iloc[-1])
     
     msg = ""
-    if rs < 35:
-        msg = f"💚 ACHAT {sym} ${pr:.2f} - RSI {rs:.1f} - 15m"
-    elif rs > 65:
-        msg = f"🔴 VENTE {sym} ${pr:.2f} - RSI {rs:.1f} - 15m"
-    
-    if msg:
-        print(msg)
-        send_telegram(msg)
-    else:
-        txt = f"✅ {sym} {pr:.2f} RSI {rs:.1f} - RAS"
-        print(txt)
-        send_telegram(txt)
+            msg = ""
+        if rs < 30:
+            msg = f"🚨 CRASH {sym} ${pr:.2f} - RSI {rs:.1f} - SURVENTE EXTREME!"
+        elif rs < 35:
+            msg = f"💚 ACHAT {sym} ${pr:.2f} - RSI {rs:.1f} - 15m"
+        elif rs > 65:
+            msg = f"🔴 VENTE {sym} ${pr:.2f} - RSI {rs:.1f} - 15m"
+
+        if msg:
+            print(msg)
+            send_telegram(msg)
+        else:
+            txt = f"✅ {sym} {pr:.2f} RSI {rs:.1f} - RAS"
+            print(txt)
