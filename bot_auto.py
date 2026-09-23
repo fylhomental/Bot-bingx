@@ -53,14 +53,14 @@ for sym in SYMBOLS:
     
     msg = ""
     if rs < 35:
-        msg = f"🟢 ACHAT {sym} {pr:.2f} RSI {rs:.1f}"
+        msg = f"💚 ACHAT {sym} ${pr:.2f} - RSI {rs:.1f} - 15m"
     elif rs > 65:
-        msg = f"🔴 VENTE {sym} {pr:.2f} RSI {rs:.1f}"
+        msg = f"🔴 VENTE {sym} ${pr:.2f} - RSI {rs:.1f} - 15m"
     
     if msg:
         print(msg)
         send_telegram(msg)
     else:
-        print(f"{sym} {pr:.2f} RSI {rs:.1f} - rien à faire")
-
-print("Scan terminé")
+        txt = f"✅ {sym} {pr:.2f} RSI {rs:.1f} - RAS"
+        print(txt)
+        send_telegram(txt)
