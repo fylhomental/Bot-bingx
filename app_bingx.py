@@ -58,22 +58,14 @@ if st.sidebar.button("🔍 Analyser + Alerter"):
         df['RSI']=rsi(df['close']); df['EMA20']=df['close'].ewm(span=20).mean(); df['EMA50']=df['close'].ewm(span=50).mean()
         last_rsi=df['RSI'].iloc[-1]; last_price=df['close'].iloc[-1]
 
-        if last_rsi < 35:
-            msg = f"💚 ACHAT {symbol} - ${last_price:.2f} - RSI {last_rsi:.2f} - {timeframe}"
-            st.success(msg); send_telegram(msg); st.balloons()
-        elif last_rsi > 65:
-            msg = f"🔴 VENTE {symbol} - ${last_price:.2f} - RSI {last_rsi:.2f} - {timeframe}"
-            st.error(msg); send_telegram(msg)
-        else:
-            st.warning(f"🟡 NEUTRE {symbol} - RSI {last_rsi:.2f}")
-
-        c1,c2=st.columns(2); c1.metric(symbol, f"${last_price:.2f}"); c2.metric("RSI", f"{last_rsi:.2f}")
-        fig=go.Figure(); fig.add_trace(go.Scatter(x=df['timestamp'], y=df['close'], name="Prix"))
-        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA20'], name="EMA20"))
-        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['EMA50'], name="EMA50"))
-        st.plotly_chart(fig, width="stretch")
-
-if st.sidebar.button("📲 Test Telegram"):
-    send_telegram("✅ Test OK - Bot BingX FYL V7 connecté! rfkay5")
-
-st.sidebar.info("Pour le mode H24 auto, on va ajouter GitHub Actions après.")
+        if last_rsi < 30:
+    msg = f"🚨 CRASH {symbol} - ${last_price} - RSI {last_rsi:.1f} SURVENTE EXTREME !!"
+    st.error(msg); send_telegram(msg)
+elif last_rsi < 35:
+    msg = f"💚 ACHAT {symbol} - ${last_price} - RSI {last_rsi:.1f}"
+    st.success(msg); send_telegram(msg)
+elif last_rsi > 65:
+    msg = f"💔 VENTE {symbol} - ${last_price} - RSI {last_rsi:.1f}"
+    st.error(msg); send_telegram(msg)
+else:
+    st.warning(f"🟡 NEUTRE {symbol} - RSI {last_rsi:.1f}")
