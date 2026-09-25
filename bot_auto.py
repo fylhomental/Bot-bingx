@@ -1,48 +1,27 @@
 import os
-import ccxt
 import requests
 
-# --- CONFIG ---
-USE_SPOT = True
-USE_FUTURES = True
-SPOT_AMOUNT_USDT = 20
-FUTURES_AMOUNT_USDT = 20
-LEVERAGE = 3
-SYMBOL_SPOT = "BTC/USDT"
-SYMBOL_FUTURES = "BTC/USDT:USDT"
+print("--- DEBUT TEST ---")
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-BINGX_API_KEY = os.getenv("BINGX_API_KEY")
-BINGX_SECRET = os.getenv("BINGX_SECRET")
+
+print(f"Token present: {bool(TELEGRAM_TOKEN)}")
+print(f"Chat ID present: {bool(TELEGRAM_CHAT_ID)}")
+print(f"Chat ID value: {TELEGRAM_CHAT_ID}")
 
 def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        r = requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+        print(f"Telegram response: {r.status_code} - {r.text}")
+    except Exception as e:
+        print(f"Erreur Telegram: {e}")
 
-def get_client(market_type):
-    return ccxt.bingx({
-        'apiKey': BINGX_API_KEY,
-        'secret': BINGX_SECRET,
-        'options': {'defaultType': market_type}
-    })
+# TEST 1 - Simple
+send_telegram("✅ TEST 1: Si tu reçois ça, Telegram marche !")
 
-# --- TA STRATEGIE ICI ---
-# Pour le test, on met un signal BUY
-signal = "BUY"  # Remplace par ta logique RSI/MACD
+# TEST 2 - Le format BOTH
+send_telegram("✅ SPOT: Achat 0.000123 BTC (~20$)\n🚀 FUTURES x3: Long 0.000369 BTC (~20$)")
 
-if signal == "BUY":
-    if USE_SPOT:
-        ex = get_client('spot')
-        price = ex.fetch_ticker(SYMBOL_SPOT)['last']
-        qty = SPOT_AMOUNT_USDT / price
-        # ex.create_market_buy_order(SYMBOL_SPOT, qty) # <-- décommente pour trader réel
-        send_telegram(f"✅ SPOT: Achat {qty:.6f} BTC (~{SPOT_AMOUNT_USDT}$)")
-
-    if USE_FUTURES:
-        ex = get_client('swap')
-        ex.set_leverage(LEVERAGE, SYMBOL_FUTURES)
-        price = ex.fetch_ticker(SYMBOL_FUTURES)['last']
-        qty = (FUTURES_AMOUNT_USDT * LEVERAGE) / price
-        # ex.create_market_buy_order(SYMBOL_FUTURES, qty) # <-- décommente pour trader réel
-        send_telegram(f"🚀 FUTURES x{LEVERAGE}: Long {qty:.6f} BTC (~{FUTURES_AMOUNT_USDT}$)")
+print("--- FIN TEST ---")
