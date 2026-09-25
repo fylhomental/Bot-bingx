@@ -1,9 +1,8 @@
 name: Bot H24
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 * * * *'
-  workflow_dispatch:
-
 jobs:
   run-bot:
     runs-on: ubuntu-latest
@@ -12,12 +11,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: pip install ccxt requests
+      - run: pip install ccxt pandas ta requests
       - name: Run python bot_auto.py
-        run: python bot_auto.py
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
           BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
+        run: python bot_auto.py
