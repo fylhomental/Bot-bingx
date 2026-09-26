@@ -5,12 +5,11 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BINGX_API_KEY = os.getenv("BINGX_API_KEY")
 BINGX_SECRET = os.getenv("BINGX_SECRET")
 
-# MEME COINS TOP BingX
 MEME_COINS = ["DOGE/USDT", "PEPE/USDT", "BONK/USDT", "WIF/USDT", "SHIB/USDT"]
-AMOUNT_USDT = 2 # 2$ par meme
-RSI_SEUIL = 25 # Plus bas que BTC car memes chutent plus fort
-TP_PCT = 10.0 # On vise +10%
-SL_PCT = 7.0 # On coupe à -7%
+AMOUNT_USDT = 1.5 # On baisse à 1.5$ pour éviter le manque de solde
+RSI_SEUIL = 35
+TP_PCT = 10.0
+SL_PCT = 7.0
 
 def send_tg(msg):
     try:
@@ -19,36 +18,36 @@ def send_tg(msg):
     except: pass
     print(msg)
 
-def get_rsi_price(symbol):
+def get_rsi(symbol):
     ex = ccxt.bingx({'enableRateLimit': True})
-    candles = ex.fetch_ohlcv(symbol, '15m', limit=100)
+    candles = ex.fetch_ohlcv(symbol, '1h', limit=100) # 1h plus fiable
     closes = [c[4] for c in candles]
-    price = closes[-1]
-    gains=[]; losses=[]
-    for i in range(1,len(closes)):
-        d=closes[i]-closes[i-1]
-        if d>0: gains.append(d)
-        else: losses.append(abs(d))
-    avg_g=sum(gains[-14:])/14 if len(gains)>=14 else 1
-    avg_l=sum(losses[-14:])/14 if len(losses)>=14 else 1
-    rsi=100-(100/(1+avg_g/(avg_l+0.0001)))
-    return price, rsi
+    # RSI classique 14
+    deltas = [closes[i]-closes[i-1] for i in range(1,len(closes))]
+    gains = [d if d>0 else 0 for d in deltas]
+    losses = [-d if d<0 else 0 for d in deltas]
+    avg_gain = sum(gains[-14:])/14
+    avg_loss = sum(losses[-14:])/14
+    if avg_loss == 0: return closes[-1], 100
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100/(1+rs))
+    return closes[-1], rsi
 
 for SYMBOL in MEME_COINS:
     try:
-        price, rsi = get_rsi_price(SYMBOL)
+        price, rsi = get_rsi(SYMBOL)
         if rsi < RSI_SEUIL:
-            ex = ccxt.bingx({
-                'apiKey': BINGX_API_KEY,
-                'secret': BINGX_SECRET,
-                'options': {'defaultType': 'spot'}
-            })
+            ex = ccxt.bingx({'apiKey': BINGX_API_KEY,'secret': BINGX_SECRET,'options': {'defaultType': 'spot'}})
+            bal = ex.fetch_balance()
+            usdt_free = bal['USDT']['free']
+            if usdt_free < AMOUNT_USDT:
+                send_tg(f"⚠️ {SYMBOL} RSI {rsi:.1f} mais solde insuffisant: {usdt_free:.2f}$ dispo")
+                continue
             qty = AMOUNT_USDT / price
             send_tg(f"🐸 MEME BUY {SYMBOL} ${price} RSI {rsi:.1f} - {AMOUNT_USDT}$")
-
-            order = ex.create_market_buy_order(SYMBOL, qty)
+            ex.create_market_buy_order(SYMBOL, qty)
             send_tg(f"✅ MEME REEL ACHETE {SYMBOL} - TP +{TP_PCT}% | SL -{SL_PCT}%")
         else:
-            print(f"{SYMBOL} RSI {rsi:.1f} - pas d'achat")
+            print(f"{SYMBOL} RSI {rsi:.1f} - Attente")
     except Exception as e:
         send_tg(f"❌ MEME ERREUR {SYMBOL}: {e}")
