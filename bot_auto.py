@@ -1,4 +1,4 @@
-import os, ccxt, requests
+import os, ccxt, requests, time
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -25,8 +25,8 @@ def get_rsi():
     ex = ccxt.bingx({'enableRateLimit': True})
     candles = ex.fetch_ohlcv("BTC/USDT", '1h', limit=100)
     closes = [c[4] for c in candles]
-    gains = []
-    losses = []
+    price = closes[-1]
+    gains = []; losses = []
     for i in range(1, len(closes)):
         diff = closes[i] - closes[i-1]
         if diff > 0: gains.append(diff)
@@ -35,12 +35,11 @@ def get_rsi():
     avg_loss = sum(losses[-14:]) / 14 if len(losses)>=14 else 1
     rs = avg_gain / (avg_loss + 0.0001)
     rsi = 100 - (100 / (1+rs))
-    price = closes[-1]
     return price, rsi
 
 try:
     price, rsi = get_rsi()
-    send_tg(f"🤖 CHECK BingX Futures x5 - BTC ${price:.2f} RSI {rsi:.1f}")
+    send_tg(f"🤖 CHECK ACTIF x5 - BTC ${price:.2f} RSI {rsi:.1f}")
 
     if rsi < RSI_SEUIL:
         ex = ccxt.bingx({
@@ -51,11 +50,7 @@ try:
         ex.set_leverage(LEVERAGE, SYMBOL)
         ex.set_margin_mode('ISOLATED', SYMBOL)
         qty = (AMOUNT * LEVERAGE) / price
-        send_tg(f"🚀 SIGNAL ACHAT RSI {rsi:.1f} < 30 -> LONG x5 {qty:.6f} BTC | TP +{TP}% SL -{SL}%")
-        # ex.create_market_buy_order(SYMBOL, qty) # A decommenter quand tu veux trader en reel
-    else:
-        send_tg(f"⏸️ Pas d'achat - RSI {rsi:.1f} > 30 - Bot en surveillance")
 
-except Exception as e:
-    send_tg(f"❌ ERREUR BOT: {e}")
-    print(f"ERROR: {e}")
+        send_tg(f"🚀 ACHAT REEL LONG x5 {qty:.6f} BTC - RSI {rsi:.1f}")
+
+        # ORDRE RE
