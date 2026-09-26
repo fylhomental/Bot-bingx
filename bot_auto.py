@@ -77,7 +77,7 @@ try:
     rsi = float(ta.momentum.RSIIndicator(df['c']).rsi().iloc[-1])
 
     if rsi < 30:
-        amount_btc = round((15 / price), 5)
+        amount_btc = round((10 / price), 5)
         order = ex.create_market_buy_order(symbol, amount_btc)
         tp_price = round(price * 1.02, 1)
         sl_price = round(price * 0.99, 1)
@@ -94,7 +94,7 @@ try:
             except:
                 pass
 
-        send_tg(f"💚 ACHAT REEL + TP/SL\n{now} BTC ${price:.2f} RSI {rsi:.2f}\nAchat: {amount_btc} BTC\nTP: ${tp_price} (+2%) | SL: ${sl_price} (-1%)")
+        send_tg(f"💚 ACHAT REEL + TP/SL\n{now} BTC ${price:.2f} RSI {rsi:.2f}\nAchat: {amount_btc} BTC (${10})\nTP: ${tp_price} (+2%) | SL: ${sl_price} (-1%)")
     else:
         send_tg(f"Bot OK {now} BTC ${price:.2f} RSI {rsi:.2f} En attente RSI < 30")
 
