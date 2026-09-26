@@ -2,7 +2,7 @@ name: Daily P&L
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # 6h UTC = 8h Paris
+    - cron: '0 23 * * *'  # 8h Tokyo (JST = UTC+9)
   workflow_dispatch:
 
 jobs:
