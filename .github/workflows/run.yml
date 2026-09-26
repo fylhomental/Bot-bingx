@@ -1,24 +1,37 @@
 name: Dual Bot BTC
 on:
   schedule:
-    - cron: '0 * * * *' # toutes les heures
+    - cron: '0 * * * *' # toutes les heures = 8h JST
   workflow_dispatch:
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
-        with: { python-version: '3.10' }
+        with:
+          python-version: '3.10'
       - run: pip install ccxt requests
-      - run: python bot_auto.py
-      - run: python bot_meme.py
+
+      - name: Run Futures Bot
+        run: python bot_auto.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
           BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
-      - run: python bot_spot.py
+
+      - name: Run Spot Bot
+        run: python bot_spot.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
+          BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
+
+      - name: Run Meme Bot
+        run: python bot_meme.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
