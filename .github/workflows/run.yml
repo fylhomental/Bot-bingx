@@ -1,21 +1,25 @@
-name: Bot H24
+name: Dual Bot BTC
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *' # toutes les heures
+  workflow_dispatch:
 jobs:
-  run-bot:
+  run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install ccxt pandas ta requests
-      - name: Run python bot_auto.py
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with: { python-version: '3.10' }
+      - run: pip install ccxt requests
+      - run: python bot_auto.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
           BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
-        run: python bot_auto.py
+      - run: python bot_spot.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
+          BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
