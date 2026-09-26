@@ -1,16 +1,14 @@
-import os, ccxt, requests
+import os, ccxt, requests, time
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BINGX_API_KEY = os.getenv("BINGX_API_KEY")
 BINGX_SECRET = os.getenv("BINGX_SECRET")
 
-SYMBOL = "BTC/USDT:USDT"
+SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"]
 AMOUNT_USDT = 10
 LEVERAGE = 5
 RSI_SEUIL = 30
-TP_PCT = 2.0
-SL_PCT = 1.5
 
 def send_tg(msg):
     try:
@@ -19,9 +17,9 @@ def send_tg(msg):
     except: pass
     print(msg)
 
-def get_rsi():
+def get_rsi_price(symbol):
     ex = ccxt.bingx({'enableRateLimit': True})
-    candles = ex.fetch_ohlcv("BTC/USDT", '1h', limit=100)
+    candles = ex.fetch_ohlcv(symbol, '1h', limit=100)
     closes = [c[4] for c in candles]
     price = closes[-1]
     gains=[]; losses=[]
@@ -35,35 +33,28 @@ def get_rsi():
     return price, rsi
 
 try:
-    price, rsi = get_rsi()
-    send_tg(f"🤖 CHECK FUTURES x{LEVERAGE} REEL - BTC ${price:.2f} RSI {rsi:.1f}")
+    ex_fut = ccxt.bingx({
+        'apiKey': BINGX_API_KEY,
+        'secret': BINGX_SECRET,
+        'options': {'defaultType': 'swap'}
+    })
 
-    if rsi < RSI_SEUIL:
-        ex = ccxt.bingx({
-            'apiKey': BINGX_API_KEY,
-            'secret': BINGX_SECRET,
-            'options': {'defaultType': 'swap'}
-        })
-        ex.set_leverage(LEVERAGE, SYMBOL)
-        qty = (AMOUNT_USDT * LEVERAGE) / price
-
-        send_tg(f"🚀 ACHAT REEL LONG x{LEVERAGE} - {AMOUNT_USDT}$ -> Position {AMOUNT_USDT*LEVERAGE}$ - RSI {rsi:.1f}")
-
-        order = ex.create_market_buy_order(SYMBOL, qty)
-        send_tg(f"✅ LONG REEL OUVERT: {qty} BTC à ${price:.2f}")
-
-        # TP et SL
-        tp_price = price * (1 + TP_PCT/100)
-        sl_price = price * (1 - SL_PCT/100)
+    for sym in SYMBOLS:
         try:
-            ex.create_order(SYMBOL, 'limit', 'sell', qty, tp_price, {'takeProfit': tp_price})
-            ex.create_order(SYMBOL, 'limit', 'sell', qty, sl_price, {'stopLoss': sl_price})
-            send_tg(f"🎯 TP +{TP_PCT}% à ${tp_price:.1f} | SL -{SL_PCT}% à ${sl_price:.1f}")
-        except Exception as e:
-            send_tg(f"⚠️ Position ouverte mais TP/SL manuel à mettre: {e}")
+            price, rsi = get_rsi_price(sym)
+            sym_fut = sym + ":USDT"
+            send_tg(f"🤖 {sym} FUTURES x{LEVERAGE} - ${price:.2f} RSI {rsi:.1f}")
 
-    else:
-        send_tg(f"⏸️ Pas d'achat - RSI {rsi:.1f} > 30")
+            if rsi < RSI_SEUIL:
+                ex_fut.set_leverage(LEVERAGE, sym_fut)
+                qty = (AMOUNT_USDT * LEVERAGE) / price
+                order = ex_fut.create_market_buy_order(sym_fut, qty)
+                send_tg(f"🚀 ACHAT REEL LONG {sym} x{LEVERAGE} - {AMOUNT_USDT}$ -> Pos {AMOUNT_USDT*LEVERAGE}$ RSI {rsi:.1f} ✅")
+            else:
+                send_tg(f"⏸️ {sym} - RSI {rsi:.1f} > 30 - Pas d'achat")
+            time.sleep(2)
+        except Exception as e:
+            send_tg(f"❌ Erreur {sym}: {e}")
 
 except Exception as e:
-    send_tg(f"❌ ERREUR REEL: {e}")
+    send_tg(f"❌ ERREUR GLOBALE FUTURES: {e}")
