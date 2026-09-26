@@ -1,0 +1,22 @@
+name: Daily P&L
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 6h UTC = 8h Paris
+  workflow_dispatch:
+
+jobs:
+  pnl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install ccxt requests
+      - run: python bot_pnl.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
+          BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
