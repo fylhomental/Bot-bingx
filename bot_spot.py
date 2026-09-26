@@ -1,14 +1,13 @@
-import os, ccxt, requests
+import os, ccxt, requests, time
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BINGX_API_KEY = os.getenv("BINGX_API_KEY")
 BINGX_SECRET = os.getenv("BINGX_SECRET")
 
-SYMBOL = "BTC/USDT"
-AMOUNT_USDT = 10 # 10$ SPOT
+SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"]
+AMOUNT_USDT = 10
 RSI_SEUIL = 30
-TP_PCT = 2.0
 
 def send_tg(msg):
     try:
@@ -17,40 +16,42 @@ def send_tg(msg):
     except: pass
     print(msg)
 
-def get_rsi():
+def get_rsi_price(symbol):
     ex = ccxt.bingx({'enableRateLimit': True})
-    candles = ex.fetch_ohlcv("BTC/USDT", '1h', limit=100)
+    candles = ex.fetch_ohlcv(symbol, '1h', limit=100)
     closes = [c[4] for c in candles]
     price = closes[-1]
-    gains = []; losses = []
-    for i in range(1, len(closes)):
-        d = closes[i] - closes[i-1]
-        (gains if d>0 else losses).append(abs(d))
-    avg_g = sum(gains[-14:])/14 if len(gains)>=14 else 1
-    avg_l = sum(losses[-14:])/14 if len(losses)>=14 else 1
-    rs = avg_g / (avg_l + 0.0001)
-    rsi = 100 - (100 / (1+rs))
+    gains=[]; losses=[]
+    for i in range(1,len(closes)):
+        d=closes[i]-closes[i-1]
+        if d>0: gains.append(d)
+        else: losses.append(abs(d))
+    avg_g=sum(gains[-14:])/14 if len(gains)>=14 else 1
+    avg_l=sum(losses[-14:])/14 if len(losses)>=14 else 1
+    rsi=100-(100/(1+avg_g/(avg_l+0.0001)))
     return price, rsi
 
 try:
-    price, rsi = get_rsi()
-    send_tg(f"💰 SPOT CHECK - BTC ${price:.2f} RSI {rsi:.1f}")
+    ex_spot = ccxt.bingx({
+        'apiKey': BINGX_API_KEY,
+        'secret': BINGX_SECRET,
+        'options': {'defaultType': 'spot'}
+    })
 
-    if rsi < RSI_SEUIL:
-        ex = ccxt.bingx({
-            'apiKey': BINGX_API_KEY,
-            'secret': BINGX_SECRET,
-            'options': {'defaultType': 'spot'}
-        })
-        qty = AMOUNT_USDT / price
-        send_tg(f"🚀 ACHAT SPOT REEL {AMOUNT_USDT}$ de BTC - RSI {rsi:.1f}")
+    for sym in SYMBOLS:
+        try:
+            price, rsi = get_rsi_price(sym)
+            send_tg(f"💰 {sym} SPOT - ${price:.2f} RSI {rsi:.1f}")
 
-        order = ex.create_market_buy_order(SYMBOL, qty)
-        tp_price = price * (1 + TP_PCT/100)
-        ex.create_limit_sell_order(SYMBOL, qty, tp_price)
-        send_tg(f"✅ SPOT acheté + Ordre de vente placé à ${tp_price:.1f} (+{TP_PCT}%)")
-    else:
-        send_tg(f"⏸️ SPOT Surveillance - RSI {rsi:.1f} > 30 - Pas d'achat")
+            if rsi < RSI_SEUIL:
+                qty = AMOUNT_USDT / price
+                order = ex_spot.create_market_buy_order(sym, qty)
+                send_tg(f"💸 ACHAT REEL SPOT {sym} - {AMOUNT_USDT}$ @ ${price:.2f} RSI {rsi:.1f} ✅")
+            else:
+                send_tg(f"⏸️ {sym} SPOT - RSI {rsi:.1f} > 30 - Pas d'achat")
+            time.sleep(2)
+        except Exception as e:
+            send_tg(f"❌ Erreur SPOT {sym}: {e}")
 
 except Exception as e:
-    send_tg(f"❌ SPOT ERREUR: {e}")
+    send_tg(f"❌ ERREUR GLOBALE SPOT: {e}")
