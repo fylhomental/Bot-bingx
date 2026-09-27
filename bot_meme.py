@@ -7,7 +7,7 @@ BINGX_SECRET = os.getenv("BINGX_SECRET")
 
 MEME_COINS = ["DOGE/USDT", "PEPE/USDT", "BONK/USDT", "WIF/USDT", "SHIB/USDT"]
 AMOUNT_USDT = 1.5 # On baisse à 1.5$ pour éviter le manque de solde
-RSI_SEUIL = 35
+RSI_SEUIL = 30
 TP_PCT = 10.0
 SL_PCT = 7.0
 
