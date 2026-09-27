@@ -1,53 +1,51 @@
-import os, ccxt, requests
+import os, ccxt, time
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-BINGX_API_KEY = os.getenv("BINGX_API_KEY")
-BINGX_SECRET = os.getenv("BINGX_SECRET")
+BINGX_API_KEY=os.getenv("BINGX_API_KEY")
+BINGX_SECRET=os.getenv("BINGX_SECRET")
+SYMBOLS=["DOGE/USDT","SHIB/USDT","PEPE/USDT","BONK/USDT","WIF/USDT"]
+AMOUNT_USDT=5
+TRAILING_PCT=3.0 # VEND si -3% depuis le plus haut
 
-MEME_COINS = ["DOGE/USDT", "PEPE/USDT", "BONK/USDT", "WIF/USDT", "SHIB/USDT"]
-AMOUNT_USDT = 1.5 # On baisse à 1.5$ pour éviter le manque de solde
-RSI_SEUIL = 30
-TP_PCT = 10.0
-SL_PCT = 7.0
+ex=ccxt.bingx({'apiKey':BINGX_API_KEY,'secret':BINGX_SECRET,'enableRateLimit':True})
 
-def send_tg(msg):
+def get_rsi_price(s):
+    candles=ex.fetch_ohlcv(s,'1h',limit=100)
+    closes=[c[4] for c in candles]
+    price=closes[-1]
+    gains=[];losses=[]
+    for i in range(1,len(closes)):
+        d=closes[i]-closes[i-1]
+        gains.append(d if d>0 else 0)
+        losses.append(-d if d<0 else 0)
+    avg_g=sum(gains[-14:])/14
+    avg_l=sum(losses[-14:])/14
+    rsi=100-(100/(1+avg_g/(avg_l+0.0001)))
+    return price,rsi
+
+for sym in SYMBOLS:
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
-    except: pass
-    print(msg)
+        price,rsi=get_rsi_price(sym)
+        print(f"{sym} RSI {rsi:.1f}")
+        bal=ex.fetch_balance()
+        coin=sym.split('/')[0]
+        qty=bal.get(coin,{}).get('free',0)
 
-def get_rsi(symbol):
-    ex = ccxt.bingx({'enableRateLimit': True})
-    candles = ex.fetch_ohlcv(symbol, '1h', limit=100) # 1h plus fiable
-    closes = [c[4] for c in candles]
-    # RSI classique 14
-    deltas = [closes[i]-closes[i-1] for i in range(1,len(closes))]
-    gains = [d if d>0 else 0 for d in deltas]
-    losses = [-d if d<0 else 0 for d in deltas]
-    avg_gain = sum(gains[-14:])/14
-    avg_loss = sum(losses[-14:])/14
-    if avg_loss == 0: return closes[-1], 100
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100/(1+rs))
-    return closes[-1], rsi
-
-for SYMBOL in MEME_COINS:
-    try:
-        price, rsi = get_rsi(SYMBOL)
-        if rsi < RSI_SEUIL:
-            ex = ccxt.bingx({'apiKey': BINGX_API_KEY,'secret': BINGX_SECRET,'options': {'defaultType': 'spot'}})
-            bal = ex.fetch_balance()
-            usdt_free = bal['USDT']['free']
-            if usdt_free < AMOUNT_USDT:
-                send_tg(f"⚠️ {SYMBOL} RSI {rsi:.1f} mais solde insuffisant: {usdt_free:.2f}$ dispo")
-                continue
-            qty = AMOUNT_USDT / price
-            send_tg(f"🐸 MEME BUY {SYMBOL} ${price} RSI {rsi:.1f} - {AMOUNT_USDT}$")
-            ex.create_market_buy_order(SYMBOL, qty)
-            send_tg(f"✅ MEME REEL ACHETE {SYMBOL} - TP +{TP_PCT}% | SL -{SL_PCT}%")
+        # SI ON A DEJA LA COIN -> MODE VENTE AU PLUS HAUT
+        if qty>0:
+            # On récupère le plus haut depuis l'achat (on le simule avec le prix actuel max du jour)
+            # Pour du vrai trailing, on stocke highest en fichier
+            # Version simple : si prix actuel est en profit, on met un SL trailing
+            # On vend si prix < plus haut des dernières 24h - 3%
+            ohlc=ex.fetch_ohlcv(sym,'1h',limit=24)
+            highest=max([c[2] for c in ohlc]) # plus haut des 24h
+            if price < highest * (1-TRAILING_PCT/100) and price > 0:
+                ex.create_market_sell_order(sym,qty)
+                print(f"VENDU {sym} AU TOP: {price} (top était {highest})")
         else:
-            print(f"{SYMBOL} RSI {rsi:.1f} - Attente")
+            # MODE ACHAT
+            if rsi < 35:
+                q=AMOUNT_USDT/price
+                ex.create_market_buy_order(sym,q)
+                print(f"ACHAT {sym} RSI {rsi:.1f}")
     except Exception as e:
-        send_tg(f"❌ MEME ERREUR {SYMBOL}: {e}")
+        print(f"ERR {sym} {e}")
