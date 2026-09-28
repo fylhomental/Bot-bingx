@@ -6,7 +6,7 @@ API_KEY = os.getenv("BINGX_API_KEY")
 API_SECRET = os.getenv("BINGX_SECRET_KEY")
 AMOUNT_USDT = 5
 TRAILING_PCT = 3.0
-MEMORY_FILE = "fylhomental/bot_meme_memory.json" # ou juste "bot_meme_memory.json" si fichier dans même dossier
+MEMORY_FILE = "MEMORY_FILE = "bot_meme_memory.json"
 
 # TOP 50 MEMES - il scannera dedans
 TOP_MEMES = [
