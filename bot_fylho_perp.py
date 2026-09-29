@@ -1,119 +1,56 @@
 import ccxt, os, pandas as pd, time
-print("=== FYLHOMENTAL PERP V2.1 FIX 109400 SL:5% TP:10% ===")
-
-API_KEY = os.getenv('BINGX_API_KEY')
-SECRET = os.getenv('BINGX_SECRET_KEY')
-
-exchange = ccxt.bingx({
-    'apiKey': API_KEY,
-    'secret': SECRET,
-    'options': {'defaultType': 'swap'},
-    'enableRateLimit': True,
-})
-
-# Force One-way mode
-try:
-    exchange.set_position_mode(False)
-    print("Position mode One-way OK")
-except Exception as e:
-    print(f"Position mode info: {e}")
-
-try:
-    markets = exchange.load_markets()
-except Exception as e:
-    print(f"Err load_markets: {e}")
-    exit()
-
-# Config
-AMOUNT_USDT = 5
-LEVERAGE = 5
-RSI_OVERSOLD = 35
-RSI_OVERBOUGHT = 70
-
-def get_rsi(symbol_ccxt, timeframe='1h', period=14):
+print("=== FYLHO V2.2 FIX ===")
+API_KEY=os.getenv('BINGX_API_KEY')
+SECRET=os.getenv('BINGX_SECRET_KEY')
+ex=ccxt.bingx({'apiKey':API_KEY,'secret':SECRET,'options':{'defaultType':'swap'},'enableRateLimit':True})
+try: ex.set_position_mode(False)
+except: pass
+try: mkts=ex.load_markets()
+except Exception as e: print(e); exit()
+def get_rsi(sym):
     try:
-        ohlcv = exchange.fetch_ohlcv(symbol_ccxt, timeframe, limit=100)
-        df = pd.DataFrame(ohlcv, columns=['t','o','h','l','c','v'])
-        delta = df['c'].diff()
-        gain = delta.where(delta>0,0).rolling(period).mean()
-        loss = -delta.where(delta<0,0).rolling(period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return float(rsi.iloc[-1])
-    except:
-        return 50
-
-# Scan top 100 volume USDT perp
-tickers = exchange.fetch_tickers()
-usdt_perps = [s for s in markets if '/USDT:USDT' in s]
-sorted_by_vol = sorted(usdt_perps, key=lambda s: tickers.get(s, {}).get('quoteVolume',0) or 0, reverse=True)[:100]
-
-print(f"Scanning {len(sorted_by_vol)} perps...")
-
-for symbol_ccxt in sorted_by_vol:
+        o=ex.fetch_ohlcv(sym,'1h',limit=100)
+        df=pd.DataFrame(o,columns=['t','o','h','l','c','v'])
+        d=df['c'].diff()
+        g=d.where(d>0,0).rolling(14).mean()
+        l=-d.where(d<0,0).rolling(14).mean()
+        r=100-(100/(1+g/l))
+        return float(r.iloc[-1])
+    except: return 50
+tick=ex.fetch_tickers()
+perps=[s for s in mkts if '/USDT:USDT' in s]
+top=sorted(perps,key=lambda s:tick.get(s,{}).get('quoteVolume',0) or 0,reverse=True)[:100]
+for sym in top:
     try:
-        market = markets[symbol_ccxt]
-        symbol_bingx = market['id']  # ex: LTC-USDT -> format BingX
-        rsi = get_rsi(symbol_ccxt)
-        # print(f"{symbol_ccxt} RSI {rsi:.1f}")
-        
-        side = None
-        if rsi < RSI_OVERSOLD:
-            side = 'LONG'
-        elif rsi > RSI_OVERBOUGHT:
-            side = 'SHORT'
-        
-        if not side:
-            continue
-
-        print(f"SIGNAL {side} {symbol_ccxt} RSI={rsi:.1f}")
-
-        # set leverage
-        try:
-            exchange.set_leverage(LEVERAGE, symbol_bingx, params={'side': 'BOTH'})
+        rsi=get_rsi(sym)
+        side=None
+        if rsi<35: side='LONG'
+        elif rsi>70: side='SHORT'
+        if not side: continue
+        print(f"SIGNAL {side} {sym} RSI {rsi:.1f}")
+        try: ex.set_leverage(5,sym,params={'side':'BOTH'})
         except: pass
-
-        # calcul quantité
-        ticker = exchange.fetch_ticker(symbol_ccxt)
-        price = ticker['last']
-        amount_coin = (AMOUNT_USDT * LEVERAGE) / price
-        amount_coin = exchange.amount_to_precision(symbol_ccxt, amount_coin)
-
-        order_side = 'buy' if side=='LONG' else 'sell'
-
-        # OUVERTURE avec BOTH obligatoire pour BingX
-        order = exchange.create_market_order(symbol_ccxt, order_side, float(amount_coin), params={'positionSide':'BOTH'})
-        print(f"OPEN {side} {symbol_ccxt} qty {amount_coin} OK")
-
+        price=ex.fetch_ticker(sym)['last']
+        qty=(5*5)/price
+        qty=ex.amount_to_precision(sym,qty)
+        oside='buy' if side=='LONG' else 'sell'
+        ex.create_market_order(sym,oside,float(qty),params={'positionSide':'BOTH'})
+        print(f"OPEN {side} {sym} OK")
         time.sleep(1)
-
-        # SL/TP -5% / +10%
-        if side == 'LONG':
-            sl_price = price * 0.95
-            tp_price = price * 1.10
-            sl_side = 'sell'
-            tp_side = 'sell'
+        if side=='LONG':
+            sl=price*0.95; tp=price*1.10; cside='sell'
         else:
-            sl_price = price * 1.05
-            tp_price = price * 0.90
-            sl_side = 'buy'
-            tp_side = 'buy'
-
-        sl_price = exchange.price_to_precision(symbol_ccxt, sl_price)
-        tp_price = exchange.price_to_precision(symbol_ccxt, tp_price)
-
-        # SL
+            sl=price*1.05; tp=price*0.90; cside='buy'
+        sl=ex.price_to_precision(sym,sl)
+        tp=ex.price_to_precision(sym,tp)
         try:
-            exchange.create_order(symbol_ccxt, 'stop_market', sl_side, float(amount_coin), None, params={'stopPrice': sl_price, 'positionSide':'BOTH', 'type':'STOP_MARKET'})
-            print(f"  SL placé {sl_price}")
-        except Exception as e:
-            print(f"  Err SL {e}")
-
-        # TP
+            ex.create_order(sym,'stop_market',cside,float(qty),None,params={'stopPrice':sl,'positionSide':'BOTH'})
+            print(f"SL {sl}")
+        except Exception as e: print(f"Err SL {e}")
         try:
-            exchange.create_order(symbol_ccxt, 'limit', tp_side, float(amount_coin), float(tp_price), params={'positionSide':'BOTH'})
-            # ou take_profit_market
-            # exchange.create_order(symbol_ccxt, 'take_profit_market', tp_side, float(amount_coin), None, params={'stopPrice': tp_price, 'positionSide':'BOTH'})
-            print(f"  TP placé {tp_price}")
-        except Exception as e:
-            print(f"  Err TP {
+            ex.create_order(sym,'limit',cside,float(qty),float(tp),params={'positionSide':'BOTH'})
+            print(f"TP {tp}")
+        except Exception as e: print(f"Err TP {e}")
+        time.sleep(1)
+    except Exception as e: print(f"Err {sym} {e}")
+print("FIN")
