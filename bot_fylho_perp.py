@@ -1,12 +1,11 @@
 import ccxt, os, pandas as pd, time
-print("=== FYLHO V2.2 FIX ===")
+print("=== FYLHO V2.3 FINAL ===")
 API_KEY=os.getenv('BINGX_API_KEY')
 SECRET=os.getenv('BINGX_SECRET_KEY')
 ex=ccxt.bingx({'apiKey':API_KEY,'secret':SECRET,'options':{'defaultType':'swap'},'enableRateLimit':True})
 try: ex.set_position_mode(False)
 except: pass
-try: mkts=ex.load_markets()
-except Exception as e: print(e); exit()
+mkts=ex.load_markets()
 def get_rsi(sym):
     try:
         o=ex.fetch_ohlcv(sym,'1h',limit=100)
@@ -18,9 +17,12 @@ def get_rsi(sym):
         return float(r.iloc[-1])
     except: return 50
 tick=ex.fetch_tickers()
-perps=[s for s in mkts if '/USDT:USDT' in s]
-top=sorted(perps,key=lambda s:tick.get(s,{}).get('quoteVolume',0) or 0,reverse=True)[:100]
+perps=[s for s in mkts if '/USDT:USDT' in s and 'NCS' not in s]
+top=sorted(perps,key=lambda s:tick.get(s,{}).get('quoteVolume',0) or 0,reverse=True)[:60]
+opened=0
+MAX_OPEN=2
 for sym in top:
+    if opened>=MAX_OPEN: break
     try:
         rsi=get_rsi(sym)
         side=None
@@ -34,23 +36,21 @@ for sym in top:
         qty=(5*5)/price
         qty=ex.amount_to_precision(sym,qty)
         oside='buy' if side=='LONG' else 'sell'
-        ex.create_market_order(sym,oside,float(qty),params={'positionSide':'BOTH'})
-        print(f"OPEN {side} {sym} OK")
-        time.sleep(1)
-        if side=='LONG':
-            sl=price*0.95; tp=price*1.10; cside='sell'
-        else:
-            sl=price*1.05; tp=price*0.90; cside='buy'
-        sl=ex.price_to_precision(sym,sl)
-        tp=ex.price_to_precision(sym,tp)
-        try:
-            ex.create_order(sym,'stop_market',cside,float(qty),None,params={'stopPrice':sl,'positionSide':'BOTH'})
-            print(f"SL {sl}")
-        except Exception as e: print(f"Err SL {e}")
-        try:
-            ex.create_order(sym,'limit',cside,float(qty),float(tp),params={'positionSide':'BOTH'})
-            print(f"TP {tp}")
-        except Exception as e: print(f"Err TP {e}")
-        time.sleep(1)
-    except Exception as e: print(f"Err {sym} {e}")
-print("FIN")
+        # SL/TP direct dans l'ordre = plus d'erreur 110424
+        sl_price = price*0.95 if side=='LONG' else price*1.05
+        tp_price = price*1.10 if side=='LONG' else price*0.90
+        sl_price=ex.price_to_precision(sym,sl_price)
+        tp_price=ex.price_to_precision(sym,tp_price)
+        params={
+            'positionSide':'BOTH',
+            'stopLoss':{'type':'STOP_MARKET','stopPrice':sl_price},
+            'takeProfit':{'type':'TAKE_PROFIT_MARKET','stopPrice':tp_price}
+        }
+        ex.create_market_order(sym,oside,float(qty),params=params)
+        print(f"OPEN {side} {sym} SL {sl_price} TP {tp_price} OK")
+        opened+=1
+        time.sleep(2)
+    except Exception as e:
+        print(f"Err {sym} {e}")
+
+print(f"FIN - {opened} positions ouvertes")
