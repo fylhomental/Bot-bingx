@@ -27,3 +27,34 @@ usdt=float(bal['USDT']['free']or 0)
 tg(f"SCAN START {usdt:.2f}$")
 for SYM in SYMS:
  ex.set_leverage(LEV,SYM)
+ ohlcv=ex.fetch_ohlcv(SYM,TF,limit=100)
+ df=pd.DataFrame(ohlcv,columns=['t','o','h','l','c','v'])
+ df['e20']=df['c'].ewm(span=20).mean()
+ df['e50']=df['c'].ewm(span=50).mean()
+ df['r']=rsi(df['c'])
+ df['sma']=df['c'].rolling(20).mean()
+ df['std']=df['c'].rolling(20).std()
+ df['up']=df['sma']+2*df['std']
+ df['low']=df['sma']-2*df['std']
+ last=df.iloc[-1]
+ price=last['c']
+ long_c=last['r']<40 and last['c']<last['low'] and last['e20']>last['e50']
+ short_c=last['r']>60 and last['c']>last['up'] and last['e20']<last['e50']
+ pos=ex.fetch_positions([SYM])
+ has=float(pos[0]['contracts'])>0 if pos else False
+ msg=f"{SYM} {price:.2f} RSI:{last['r']:.1f}"
+ print(msg)
+ if has:
+  continue
+ amt=(usdt*RISK*LEV)/price
+ amt=ex.amount_to_precision(SYM,amt)
+ if long_c:
+  ex.create_market_buy_order(SYM,amt)
+  tg(f"🚀 LONG x{LEV} {SYM} {price}")
+  break
+ if short_c:
+  ex.create_market_sell_order(SYM,amt)
+  tg(f"🔻 SHORT x{LEV} {SYM} {price}")
+  break
+else:
+ tg("No signal "+msg)
