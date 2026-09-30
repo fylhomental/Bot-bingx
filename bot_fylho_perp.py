@@ -13,8 +13,7 @@ TP=0.06
 def tg(m):
  try:
   u=f"https://api.telegram.org/bot{T}/sendMessage"
-  d={"chat_id":C,"text":m}
-  requests.post(u,data=d,timeout=10)
+  requests.post(u,data={"chat_id":C,"text":m},timeout=10)
  except:
   pass
 def rsi(s,p=14):
@@ -25,12 +24,14 @@ def rsi(s,p=14):
 ex=ccxt.bingx({'apiKey':A,'secret':S,'options':{'defaultType':'swap'}})
 bal=ex.fetch_balance()
 usdt=float(bal['USDT']['free']or 0)
-tg(f"SCAN START {usdt:.2f}$")
+for SYM in SYMS:
+ try:
+  ex.set_leverage(LEV,SYM)
+ except:
+  pass
 for SYM in SYMS:
  ohlcv=ex.fetch_ohlcv(SYM,TF,limit=100)
  df=pd.DataFrame(ohlcv,columns=['t','o','h','l','c','v'])
- df['e20']=df['c'].ewm(span=20).mean()
- df['e50']=df['c'].ewm(span=50).mean()
  df['r']=rsi(df['c'])
  df['sma']=df['c'].rolling(20).mean()
  df['std']=df['c'].rolling(20).std()
@@ -52,23 +53,17 @@ for SYM in SYMS:
   ex.create_market_buy_order(SYM,amt)
   sl=price*(1-SL)
   tp=price*(1+TP)
-  try:
-   ex.create_order(SYM,"limit","sell",amt,tp)
-   ex.create_order(SYM,"STOP_MARKET","sell",amt,None,{"stopPrice":sl})
-  except:
-   pass
-  tg(f"LONG x{LEV} {SYM} {price} SL:{sl:.1f} TP:{tp:.1f}")
+  ex.create_order(SYM,'TAKE_PROFIT_MARKET','sell',amt,None,{'stopPrice':tp})
+  ex.create_order(SYM,'STOP_MARKET','sell',amt,None,{'stopPrice':sl})
+  tg(f"🚀 LONG x{LEV} {SYM} {price} SL:{sl:.1f} TP:{tp:.1f}")
   break
  if short_c:
   ex.create_market_sell_order(SYM,amt)
   sl=price*(1+SL)
   tp=price*(1-TP)
-  try:
-   ex.create_order(SYM,"limit","buy",amt,tp)
-   ex.create_order(SYM,"STOP_MARKET","buy",amt,None,{"stopPrice":sl})
-  except:
-   pass
-  tg(f"SHORT x{LEV} {SYM} {price} SL:{sl:.1f} TP:{tp:.1f}")
+  ex.create_order(SYM,'TAKE_PROFIT_MARKET','buy',amt,None,{'stopPrice':tp})
+  ex.create_order(SYM,'STOP_MARKET','buy',amt,None,{'stopPrice':sl})
+  tg(f"🔻 SHORT x{LEV} {SYM} {price} SL:{sl:.1f} TP:{tp:.1f}")
   break
 else:
  tg("No signal "+msg)
