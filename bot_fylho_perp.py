@@ -4,35 +4,35 @@ A=os.getenv('BINGX_API_KEY')
 S=os.getenv('BINGX_SECRET_KEY')
 T=os.getenv('TELEGRAM_BOT_TOKEN')
 C=os.getenv('TELEGRAM_CHAT_ID')
-SYMS=['BTC/USDT:USDT','ETH/USDT:USDT','SOL/USDT:USDT']
+SYMS=[
+ 'BTC/USDT:USDT',
+ 'ETH/USDT:USDT',
+ 'SOL/USDT:USDT'
+]
 TF='5m'
 LEV=10
 RISK=0.15
 def tg(m):
  try:
-  a="https://api.telegram.org/bot"
-  b="/sendMessage"
-  u=a+T+b
+  u=f"https://api.telegram.org/bot{T}/sendMessage"
   d={"chat_id":C,"text":m}
   requests.post(u,data=d,timeout=10)
- except: pass
+ except:
+  pass
 def rsi(s,p=14):
  d=s.diff()
  g=d.clip(lower=0).ewm(alpha=1/p).mean()
  l=(-d.clip(upper=0)).ewm(alpha=1/p).mean()
  return 100-100/(1+g/l)
-ex=ccxt.bingx({'apiKey':A,'secret':S,'options':{'defaultType':'swap'}})
+ex=ccxt.bingx({
+ 'apiKey':A,
+ 'secret':S,
+ 'options':{'defaultType':'swap'}
+})
 bal=ex.fetch_balance()
 usdt=float(bal['USDT']['free']or 0)
 tg(f"SCAN START {usdt:.2f}$")
 for SYM in SYMS:
-  try:
-  ex.set_leverage(LEV,SYM)
- except:
-  try:
-   ex.set_leverage(LEV,SYM,{'side':'LONG'})
-  except:
-   pass
  ohlcv=ex.fetch_ohlcv(SYM,TF,limit=100)
  df=pd.DataFrame(ohlcv,columns=['t','o','h','l','c','v'])
  df['e20']=df['c'].ewm(span=20).mean()
@@ -44,8 +44,8 @@ for SYM in SYMS:
  df['low']=df['sma']-2*df['std']
  last=df.iloc[-1]
  price=last['c']
- long_c=last['r']<40 and last['c']<last['low'] and last['e20']>last['e50']
- short_c=last['r']>60 and last['c']>last['up'] and last['e20']<last['e50']
+ long_c=last['r']<40 and last['c']<last['low']
+ short_c=last['r']>60 and last['c']>last['up']
  pos=ex.fetch_positions([SYM])
  has=float(pos[0]['contracts'])>0 if pos else False
  msg=f"{SYM} {price:.2f} RSI:{last['r']:.1f}"
