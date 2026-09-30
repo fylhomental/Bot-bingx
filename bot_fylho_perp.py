@@ -20,6 +20,9 @@ def get_rsi(sym, ex):
         loss = -delta.where(delta < 0, 0).rolling(14).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
+       # Ne repose pas si TP/SL existe déjà
+orders = ex.fetch_open_orders(sym)
+if len(orders) >= 2: continue
         return float(rsi.iloc[-1])
     except:
         return 50
