@@ -1,93 +1,88 @@
-import ccxt, os, pandas as pd, time
-print("=== FYLHO V2.7 32USDT 4x7 ===")
+import os, ccxt, requests, time
 API_KEY=os.getenv('BINGX_API_KEY')
 SECRET=os.getenv('BINGX_SECRET_KEY')
-ex=ccxt.bingx({'apiKey':API_KEY,'secret':SECRET,'options':{'defaultType':'swap'},'enableRateLimit':True})
-try: ex.set_position_mode(False)
-except: pass
-mkts=ex.load_markets()
-
-bal=ex.fetch_balance()
-free=bal.get('USDT',{}).get('free',0)
-print(f"Solde Futures Total: {free:.2f} USDT")
-
-positions=ex.fetch_positions()
-open_pos=[p for p in positions if float(p.get('contracts',0))>0]
-print(f"Positions ouvertes: {len(open_pos)}")
-open_syms=[p['symbol'] for p in open_pos]
-for p in open_pos:
-    print(f" - {p['symbol']} {p['side']} {p['contracts']} PnL {float(p.get('unrealizedPnl',0)):.2f}")
-
-MAX_POS=4
+TG_TOKEN=os.getenv('TELEGRAM_BOT_TOKEN')
+TG_CHAT=os.getenv('TELEGRAM_CHAT_ID')
 TRADE_USDT=7
+MAX_POS=4
+LEVERAGE=5
 
-def get_rsi(sym):
+def tg(msg):
+    if not TG_TOKEN or not TG_CHAT: return
     try:
-        o=ex.fetch_ohlcv(sym,'1h',limit=100)
-        df=pd.DataFrame(o,columns=['t','o','h','l','c','v'])
-        d=df['c'].diff()
-        g=d.where(d>0,0).rolling(14).mean()
-        l=-d.where(d<0,0).rolling(14).mean()
-        r=100-(100/(1+g/l))
-        return float(r.iloc[-1])
-    except: return 50
+        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", data={"chat_id":TG_CHAT,"text":msg}, timeout=10)
+    except: pass
 
-tick=ex.fetch_tickers()
-perps=[s for s in mkts if '/USDT:USDT' in s and 'NCS' not in s and 'USDC' not in s and 'BABY' not in s]
-top=sorted(perps,key=lambda s:tick.get(s,{}).get('quoteVolume',0) or 0,reverse=True)[:80]
+print("=== FYLHO V2.8 32USDT 4x7 + TG ===")
+ex=ccxt.bingx({'apiKey':API_KEY,'secret':SECRET,'options':{'defaultType':'swap'},'enableRateLimit':True})
+try: ex.load_markets()
+except: pass
 
-opened=0
-for sym in top:
-    if opened>=2: break
-    if sym in open_syms: continue
-    try:
-        rsi=get_rsi(sym)
-        side=None
-        if rsi<32: side='LONG'
-        elif rsi>70: side='SHORT'
-        if not side: continue
-        print(f"SIGNAL {side} {sym} RSI {rsi:.1f}")
+# 1. Solde
+bal=ex.fetch_balance()
+total=float(bal['USDT']['total'] or 0)
+free=float(bal['USDT']['free'] or 0)
+print(f"Solde Futures Total: {total:.2f} USDT (libre {free:.2f})")
 
-        bal=ex.fetch_balance()
-        free=bal.get('USDT',{}).get('free',0)
+# 2. Positions actuelles
+positions=ex.fetch_positions()
+open_syms=[]
+pnl_txt=""
+for p in positions:
+    if float(p.get('contracts',0) or 0)!=0:
+        sym=p['symbol'].split('/')[0].split(':')[0]
+        side=p['side']
+        pnl=float(p.get('unrealizedPnl',0) or 0)
+        open_syms.append(sym)
+        pnl_txt+=f"{sym} {side} {pnl:+.2f}$\n"
+print(f"Positions ouvertes: {len(open_syms)} {open_syms}")
 
-        if (free < 7.5 or len(open_pos) >= MAX_POS) and open_pos:
-            oldest=sorted(open_pos,key=lambda x: x.get('timestamp',0))[0]
-            print(f"RECYCLAGE {oldest['symbol']} PnL {float(oldest.get('unrealizedPnl',0)):.2f}")
-            close_side='sell' if oldest['side']=='long' else 'buy'
-            ex.create_market_order(oldest['symbol'],close_side,float(oldest['contracts']),params={'positionSide':'BOTH','reduceOnly':True})
-            print(f"FERME {oldest['symbol']}")
-            time.sleep(3)
-            positions=ex.fetch_positions()
-            open_pos=[p for p in positions if float(p.get('contracts',0))>0]
-            open_syms=[p['symbol'] for p in open_pos]
-
-        bal=ex.fetch_balance()
-        if bal['USDT']['free'] < 7.5:
-            print(f"Solde bas {bal['USDT']['free']:.2f} FIN")
-            break
-
+# 3. Trading
+COINS=["BTC/USDT:USDT","ETH/USDT:USDT","SOL/USDT:USDT","AVAX/USDT:USDT","NEAR/USDT:USDT","ZEC/USDT:USDT"]
+if len(open_syms)>=MAX_POS:
+    print("MAX POS atteint")
+else:
+    for pair in COINS:
+        coin=pair.split('/')[0]
+        if coin in open_syms: continue
+        if len(open_syms)>=MAX_POS: break
         try:
-            ex.set_leverage(5,sym,params={'side':'BOTH'})
-            ex.set_margin_mode('ISOLATED',sym,params={'side':'BOTH'})
-        except: pass
+            ohlcv=ex.fetch_ohlcv(pair,'1h',limit=100)
+            closes=[c[4] for c in ohlcv]
+            # RSI 14
+            gains=0;losses=0
+            for i in range(1,15):
+                diff=closes[-i]-closes[-i-1]
+                if diff>0: gains+=diff
+                else: losses-=diff
+            if losses==0: rsi=100
+            else:
+                rs=gains/losses
+                rsi=100-(100/(1+rs))
 
-        price=ex.fetch_ticker(sym)['last']
-        qty=(TRADE_USDT*5)/price
-        qty=ex.amount_to_precision(sym,qty)
-        if float(qty)==0: continue
-        oside='buy' if side=='LONG' else 'sell'
-        sl=price*0.95 if side=='LONG' else price*1.05
-        tp=price*1.10 if side=='LONG' else price*0.90
-        sl=ex.price_to_precision(sym,sl)
-        tp=ex.price_to_precision(sym,tp)
-        params={'positionSide':'BOTH','stopLoss':{'stopPrice':sl},'takeProfit':{'stopPrice':tp}}
-        ex.create_market_order(sym,oside,float(qty),params=params)
-        print(f"OPEN {side} {sym} 7USDT x5 SL {sl} TP {tp}")
-        opened+=1
-        time.sleep(2)
+            side=None
+            if rsi<35: side='buy'
+            elif rsi>65: side='sell'
 
-    except Exception as e:
-        print(f"Err {sym} {e}")
+            if side:
+                price=closes[-1]
+                amount=TRADE_USDT/price
+                # leverage
+                try: ex.set_leverage(LEVERAGE, pair)
+                except: pass
+                # TP 10% SL 5%
+                tp_price = price*1.10 if side=='buy' else price*0.90
+                sl_price = price*0.95 if side=='buy' else price*1.05
+                ex.create_order(pair,'market',side,amount,None,{'takeProfit':tp_price,'stopLoss':sl_price})
+                msg=f"{'🟢 LONG' if side=='buy' else '🔴 SHORT'} {coin} 7$ x{LEVERAGE} RSI {rsi:.1f}\nSolde: {total:.2f}$"
+                print(f"OPEN {msg}")
+                tg(f"🚀 {msg}\nTP +10% / SL -5% auto")
+                open_syms.append(coin)
+                time.sleep(1)
+        except Exception as e:
+            print(f"Err {coin}: {e}")
 
+# 4. Rapport final + TG
+final=f"💼 FYLHO V2.8\nSolde: {total:.2f}$ (libre {free:.2f}$)\nPositions: {len(open_syms)}/4\n{pnl_txt}"
 print("FIN RUN")
+tg(final)
