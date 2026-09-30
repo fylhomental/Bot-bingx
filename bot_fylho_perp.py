@@ -4,11 +4,7 @@ A=os.getenv('BINGX_API_KEY')
 S=os.getenv('BINGX_SECRET_KEY')
 T=os.getenv('TELEGRAM_BOT_TOKEN')
 C=os.getenv('TELEGRAM_CHAT_ID')
-SYMS=[
- 'BTC/USDT:USDT',
- 'ETH/USDT:USDT',
- 'SOL/USDT:USDT'
-]
+SYMS=['BTC/USDT:USDT','ETH/USDT:USDT','SOL/USDT:USDT']
 TF='5m'
 LEV=10
 RISK=0.15
@@ -26,11 +22,7 @@ def rsi(s,p=14):
  g=d.clip(lower=0).ewm(alpha=1/p).mean()
  l=(-d.clip(upper=0)).ewm(alpha=1/p).mean()
  return 100-100/(1+g/l)
-ex=ccxt.bingx({
- 'apiKey':A,
- 'secret':S,
- 'options':{'defaultType':'swap'}
-})
+ex=ccxt.bingx({'apiKey':A,'secret':S,'options':{'defaultType':'swap'}})
 bal=ex.fetch_balance()
 usdt=float(bal['USDT']['free']or 0)
 tg(f"SCAN START {usdt:.2f}$")
@@ -61,4 +53,22 @@ for SYM in SYMS:
   sl=price*(1-SL)
   tp=price*(1+TP)
   try:
-   ex.create_order(SYM,'
+   ex.create_order(SYM,"limit","sell",amt,tp)
+   ex.create_order(SYM,"STOP_MARKET","sell",amt,None,{"stopPrice":sl})
+  except:
+   pass
+  tg(f"LONG x{LEV} {SYM} {price} SL:{sl:.1f} TP:{tp:.1f}")
+  break
+ if short_c:
+  ex.create_market_sell_order(SYM,amt)
+  sl=price*(1+SL)
+  tp=price*(1-TP)
+  try:
+   ex.create_order(SYM,"limit","buy",amt,tp)
+   ex.create_order(SYM,"STOP_MARKET","buy",amt,None,{"stopPrice":sl})
+  except:
+   pass
+  tg(f"SHORT x{LEV} {SYM} {price} SL:{sl:.1f} TP:{tp:.1f}")
+  break
+else:
+ tg("No signal "+msg)
