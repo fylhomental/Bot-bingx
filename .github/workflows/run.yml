@@ -11,7 +11,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - run: pip install ccxt requests
+      - run: pip install ccxt requests pandas
       - name: Run FYLHO PERP UNIVERSAL
         env:
           BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
