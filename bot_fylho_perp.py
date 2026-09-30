@@ -20,9 +20,6 @@ def get_rsi(sym, ex):
         loss = -delta.where(delta < 0, 0).rolling(14).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
-       # Ne repose pas si TP/SL existe déjà
-orders = ex.fetch_open_orders(sym)
-if len(orders) >= 2: continue
         return float(rsi.iloc[-1])
     except:
         return 50
@@ -38,31 +35,44 @@ print(f"CHASSEUR PERP {LEV}x TP {TP_ROE}% SL {SL_ROE}%")
 try:
     positions = ex.fetch_positions()
     open_syms = []
+
     for p in positions:
-        try:
-            if float(p.get('contracts', 0)) > 0:
-                open_syms.append(p['symbol'])
-                sym = p['symbol']
-                entry = float(p['entryPrice'])
-                side = p['side']
-                qty = float(p['contracts'])
-                
-                tp_price = entry * (1 + TP_ROE/100/LEV) if side == 'long' else entry * (1 - TP_ROE/100/LEV)
-                sl_price = entry * (1 - SL_ROE/100/LEV) if side == 'long' else entry * (1 + SL_ROE/100/LEV)
-                
-                try:
-                    if side == 'long':
-                        ex.create_order(sym, 'limit', 'sell', qty, tp_price, {'reduceOnly': True})
-                        ex.create_order(sym, 'stop', 'sell', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
-                    else:
-                        ex.create_order(sym, 'limit', 'buy', qty, tp_price, {'reduceOnly': True})
-                        ex.create_order(sym, 'stop', 'buy', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
-                    print(f"TP/SL POSE {sym}")
-                except Exception as e:
-                    print(f"Erreur TP/SL {sym}: {e}")
-        except:
+        if float(p.get('contracts', 0)) == 0:
+            continue
+        
+        sym = p['symbol']
+        # On ne gere que les SYMBOLS voulus
+        if sym not in SYMBOLS:
             continue
             
+        open_syms.append(sym)
+        entry = float(p['entryPrice'])
+        side = p['side']
+        qty = float(p['contracts'])
+
+        # Fix doublon : si TP/SL deja la, on skip
+        try:
+            orders = ex.fetch_open_orders(sym)
+            if len(orders) >= 2:
+                print(f"TP/SL deja pose {sym}, skip")
+                continue
+        except:
+            pass
+
+        tp_price = entry * (1 + TP_ROE/100/LEV) if side == 'long' else entry * (1 - TP_ROE/100/LEV)
+        sl_price = entry * (1 - SL_ROE/100/LEV) if side == 'long' else entry * (1 + SL_ROE/100/LEV)
+
+        try:
+            if side == 'long':
+                ex.create_order(sym, 'limit', 'sell', qty, tp_price, {'reduceOnly': True})
+                ex.create_order(sym, 'stop', 'sell', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
+            else:
+                ex.create_order(sym, 'limit', 'buy', qty, tp_price, {'reduceOnly': True})
+                ex.create_order(sym, 'stop', 'buy', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
+            print(f"TP/SL POSE {sym} TP {tp_price:.4f} SL {sl_price:.4f}")
+        except Exception as e:
+            print(f"Erreur TP/SL {sym}: {e}")
+
     print(f"Positions ouvertes: {open_syms}")
 
     for sym in SYMBOLS:
@@ -80,10 +90,9 @@ try:
                 price = ex.fetch_ticker(sym)['last']
                 qty = AMOUNT_USDT * LEV / price
                 ex.create_market_buy_order(sym, qty)
-                print(f"ACHAT {sym}")
-                time.sleep(1)
+                print(f"ACHAT {sym} {qty} a {price}")
+                time.sleep(2)
                 
-                # Pose les limites directement
                 tp_price = price * (1 + TP_ROE/100/LEV)
                 sl_price = price * (1 - SL_ROE/100/LEV)
                 ex.create_order(sym, 'limit', 'sell', qty, tp_price, {'reduceOnly': True})
