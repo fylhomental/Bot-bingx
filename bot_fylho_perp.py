@@ -26,7 +26,13 @@ bal=ex.fetch_balance()
 usdt=float(bal['USDT']['free']or 0)
 tg(f"SCAN START {usdt:.2f}$")
 for SYM in SYMS:
- ex.set_leverage(LEV,SYM)
+  try:
+  ex.set_leverage(LEV,SYM)
+ except:
+  try:
+   ex.set_leverage(LEV,SYM,{'side':'LONG'})
+  except:
+   pass
  ohlcv=ex.fetch_ohlcv(SYM,TF,limit=100)
  df=pd.DataFrame(ohlcv,columns=['t','o','h','l','c','v'])
  df['e20']=df['c'].ewm(span=20).mean()
