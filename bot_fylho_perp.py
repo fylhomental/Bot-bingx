@@ -1,69 +1,122 @@
-import os,ccxt,requests
+import ccxt
+import os
+import json
+import time
 import pandas as pd
-A=os.getenv('BINGX_API_KEY')
-S=os.getenv('BINGX_SECRET_KEY')
-T=os.getenv('TELEGRAM_BOT_TOKEN')
-C=os.getenv('TELEGRAM_CHAT_ID')
-SYMS=['BTC/USDT:USDT','ETH/USDT:USDT','SOL/USDT:USDT']
-TF='5m'
-LEV=10
-RISK=0.15
-SL=0.03
-TP=0.06
-def tg(m):
- try:
-  u=f"https://api.telegram.org/bot{T}/sendMessage"
-  requests.post(u,data={"chat_id":C,"text":m},timeout=10)
- except:
-  pass
-def rsi(s,p=14):
- d=s.diff()
- g=d.clip(lower=0).ewm(alpha=1/p).mean()
- l=(-d.clip(upper=0)).ewm(alpha=1/p).mean()
- return 100-100/(1+g/l)
-ex=ccxt.bingx({'apiKey':A,'secret':S,'options':{'defaultType':'swap'}})
-bal=ex.fetch_balance()
-usdt=float(bal['USDT']['free']or 0)
-for SYM in SYMS:
- try:
-  ex.set_leverage(LEV,SYM)
- except:
-  pass
-for SYM in SYMS:
- ohlcv=ex.fetch_ohlcv(SYM,TF,limit=100)
- df=pd.DataFrame(ohlcv,columns=['t','o','h','l','c','v'])
- df['r']=rsi(df['c'])
- df['sma']=df['c'].rolling(20).mean()
- df['std']=df['c'].rolling(20).std()
- df['up']=df['sma']+2*df['std']
- df['low']=df['sma']-2*df['std']
- last=df.iloc[-1]
- price=last['c']
- long_c=last['r']<40 and last['c']<last['low']
- short_c=last['r']>60 and last['c']>last['up']
- pos=ex.fetch_positions([SYM])
- has=float(pos[0]['contracts'])>0 if pos else False
- msg=f"{SYM} {price:.2f} RSI:{last['r']:.1f}"
- print(msg)
- if has:
-  continue
- amt=(usdt*RISK*LEV)/price
- amt=ex.amount_to_precision(SYM,amt)
- if long_c:
-  ex.create_market_buy_order(SYM,amt)
-  sl=price*(1-SL)
-  tp=price*(1+TP)
-  ex.create_order(SYM,'TAKE_PROFIT_MARKET','sell',amt,None,{'stopPrice':tp})
-  ex.create_order(SYM,'STOP_MARKET','sell',amt,None,{'stopPrice':sl})
-  tg(f"🚀 LONG x{LEV} {SYM} {price} SL:{sl:.1f} TP:{tp:.1f}")
-  break
- if short_c:
-  ex.create_market_sell_order(SYM,amt)
-  sl=price*(1+SL)
-  tp=price*(1-TP)
-  ex.create_order(SYM,'TAKE_PROFIT_MARKET','buy',amt,None,{'stopPrice':tp})
-  ex.create_order(SYM,'STOP_MARKET','buy',amt,None,{'stopPrice':sl})
-  tg(f"🔻 SHORT x{LEV} {SYM} {price} SL:{sl:.1f} TP:{tp:.1f}")
-  break
-else:
- tg("No signal "+msg)
+
+API_KEY = os.getenv("BINGX_API_KEY")
+API_SECRET = os.getenv("BINGX_SECRET_KEY")
+AMOUNT = 5
+LEV = 10
+TP_PCT = 3.0 # = +30% PnL en x10
+SL_PCT = 1.5 # = -15% PnL en x10
+MEM_FILE = "bot_perp_memory.json"
+
+# Matières premières forcées même si pas dans Top volume
+COMMODITIES = ["GOLD/USDT:USDT", "XAU/USDT:USDT", "SILVER/USDT:USDT", "XAG/USDT:USDT", "OIL/USDT:USDT", "USOIL/USDT:USDT", "UKOIL/USDT:USDT", "NATGAS/USDT:USDT"]
+
+def get_rsi(symbol, exchange):
+    try:
+        ohlcv = exchange.fetch_ohlcv(symbol, '1h', limit=100)
+        df = pd.DataFrame(ohlcv, columns=['t','o','h','l','c','v'])
+        delta = df['c'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return float(rsi.iloc[-1])
+    except:
+        return 50
+
+exchange = ccxt.bingx({
+    'apiKey': API_KEY,
+    'secret': API_SECRET,
+    'enableRateLimit': True,
+    'options': {'defaultType': 'swap'}
+})
+
+memory = json.load(open(MEM_FILE)) if os.path.exists(MEM_FILE) else {}
+
+exchange.load_markets()
+tickers = exchange.fetch_tickers()
+
+usdt_markets = []
+for sym, t in tickers.items():
+    if '/USDT' in sym and t.get('quoteVolume') is not None:
+        usdt_markets.append((sym, t['quoteVolume']))
+
+usdt_markets.sort(key=lambda x: x[1], reverse=True)
+TOP_LIST = [x[0] for x in usdt_markets[:120]]
+
+# Ajout forcé des matières premières
+for c in COMMODITIES:
+    if c in exchange.markets and c not in TOP_LIST:
+        TOP_LIST.append(c)
+
+print(f"=== FYLHO PERP UNIVERSAL x10 + SL/TP AUTO ===")
+print(f"Scanning {len(TOP_LIST)} marchés avec matières premières: {COMMODITIES}")
+
+all_rsi = []
+for sym in TOP_LIST:
+    rsi = get_rsi(sym, exchange)
+    print(f"{sym} RSI {rsi:.1f}")
+    all_rsi.append((sym, rsi))
+    time.sleep(0.12)
+
+all_rsi.sort(key=lambda x: x[1])
+longs = [x for x in all_rsi if x[1] < 40][:3]
+shorts = [x for x in all_rsi if x[1] > 60][:3]
+
+print(f"LONG signal: {longs}")
+print(f"SHORT signal: {shorts}")
+
+# OPEN LONG avec SL/TP AUTO
+for sym, rsi in longs:
+    if sym not in memory:
+        try:
+            try:
+                exchange.set_leverage(LEV, sym)
+            except:
+                pass
+            exchange.create_market_buy_order(sym, AMOUNT)
+            price = exchange.fetch_ticker(sym)['last']
+            tp_price = price * (1 + TP_PCT / 100)
+            sl_price = price * (1 - SL_PCT / 100)
+            try:
+                exchange.create_order(sym, 'TAKE_PROFIT_MARKET', 'sell', AMOUNT, None, {'stopPrice': tp_price, 'closePosition': True})
+                exchange.create_order(sym, 'STOP_MARKET', 'sell', AMOUNT, None, {'stopPrice': sl_price, 'closePosition': True})
+                print(f"TP/SL posé LONG {sym} TP {tp_price:.4f} SL {sl_price:.4f}")
+            except Exception as e:
+                print(f"Erreur pose TP/SL LONG {sym}: {e}")
+            memory[sym] = {"side": "long", "entry": price}
+            print(f"OPEN LONG {sym} RSI {rsi:.1f} @ {price}")
+        except Exception as e:
+            print(f"Err LONG {sym}: {e}")
+
+# OPEN SHORT avec SL/TP AUTO
+for sym, rsi in shorts:
+    if sym not in memory:
+        try:
+            try:
+                exchange.set_leverage(LEV, sym)
+            except:
+                pass
+            exchange.create_market_sell_order(sym, AMOUNT)
+            price = exchange.fetch_ticker(sym)['last']
+            tp_price = price * (1 - TP_PCT / 100)
+            sl_price = price * (1 + SL_PCT / 100)
+            try:
+                exchange.create_order(sym, 'TAKE_PROFIT_MARKET', 'buy', AMOUNT, None, {'stopPrice': tp_price, 'closePosition': True})
+                exchange.create_order(sym, 'STOP_MARKET', 'buy', AMOUNT, None, {'stopPrice': sl_price, 'closePosition': True})
+                print(f"TP/SL posé SHORT {sym} TP {tp_price:.4f} SL {sl_price:.4f}")
+            except Exception as e:
+                print(f"Erreur pose TP/SL SHORT {sym}: {e}")
+            memory[sym] = {"side": "short", "entry": price}
+            print(f"OPEN SHORT {sym} RSI {rsi:.1f} @ {price}")
+        except Exception as e:
+            print(f"Err SHORT {sym}: {e}")
+
+with open(MEM_FILE, 'w') as f:
+    json.dump(memory, f, indent=2)
+
+print("=== FIN SCAN ===")
