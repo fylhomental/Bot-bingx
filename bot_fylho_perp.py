@@ -1,32 +1,26 @@
-import os, ccxt, requests, time
-API_KEY=os.getenv('BINGX_API_KEY')
-SECRET=os.getenv('BINGX_SECRET_KEY')
-TG_TOKEN=os.getenv('TELEGRAM_BOT_TOKEN')
-TG_CHAT=os.getenv('TELEGRAM_CHAT_ID')
-print(f"DEBUG TG_TOKEN existe: {bool(TG_TOKEN)} len={len(TG_TOKEN) if TG_TOKEN else 0}")
-print(f"DEBUG TG_CHAT: {TG_CHAT}")
+import os, ccxt, requests
+A=os.getenv('BINGX_API_KEY')
+S=os.getenv('BINGX_SECRET_KEY')
+T=os.getenv('TELEGRAM_BOT_TOKEN')
+C=os.getenv('TELEGRAM_CHAT_ID')
+print(f"TOKEN OK? {bool(T)} CHAT={C}")
 
-def tg(msg):
-    if not TG_TOKEN or not TG_CHAT:
-        print("TG SKIP: token ou chat manquant")
-        return
-    try:
-        url=f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        r=requests.post(url, data={"chat_id":TG_CHAT,"text":msg}, timeout=10)
-        print(f"TG RESPONSE: {r.status_code} {r.text[:200]}")
-    except Exception as e:
-        print(f"TG ERROR: {e}")
+def tg(m):
+ try:
+  u=f"https://api.telegram.org/bot{T}/sendMessage"
+  r=requests.post(u,data={"chat_id":C,"text":m},timeout=10)
+  print(f"TG {r.status_code} {r.text[:300]}")
+ except Exception as e:
+  print(f"TG ERR {e}")
 
-print("=== FYLHO V2.8.1 DEBUG ===")
-ex=ccxt.bingx({'apiKey':API_KEY,'secret':SECRET,'options':{'defaultType':'swap'},'enableRateLimit':True})
+ex=ccxt.bingx({'apiKey':A,'secret':S,'options':{'defaultType':'swap'}})
 ex.load_markets()
-bal=ex.fetch_balance()
-total=float(bal['USDT']['total'] or 0)
-free=float(bal['USDT']['free'] or 0)
-print(f"Solde Futures Total: {total:.2f} USDT (libre {free:.2f})")
-positions=ex.fetch_positions()
-open_syms=[p['symbol'].split('/')[0].split(':')[0] for p in positions if float(p.get('contracts',0) or 0)!=0]
-print(f"Positions ouvertes: {len(open_syms)} {open_syms}")
-print("MAX POS atteint" if len(open_syms)>=4 else "FREE SLOT")
-tg(f"🔧 TEST DEBUG V2.8.1\nSolde: {total:.2f}$\nPositions: {open_syms}\nSi tu reçois ça, Telegram est OK")
-print("FIN RUN")
+b=ex.fetch_balance()
+tot=float(b['USDT']['total'] or 0)
+fre=float(b['USDT']['free'] or 0)
+print(f"Solde: {tot:.2f} libre {fre:.2f}")
+pos=ex.fetch_positions()
+opens=[p['symbol'].split('/')[0] for p in pos if float(p.get('contracts',0)or 0)!=0]
+print(f"POS {opens}")
+tg(f"TEST V2.8.1 OK\nSolde {tot:.2f}$\nPOS {opens}")
+print("FIN")
