@@ -1,18 +1,12 @@
-import ccxt, os, time, json
+import ccxt, os, json, time
 import pandas as pd
 
 API_KEY = os.getenv("BINGX_API_KEY")
 API_SECRET = os.getenv("BINGX_SECRET_KEY")
-
-LEV = 5
 AMOUNT_USDT = 5
-TP_ROE = 40.0
-SL_ROE = 20.0
-MAX_POS = 5
+MAX_POS = 20
 
-MEMES = ["DOGE/USDT:USDT","SHIB/USDT:USDT","PEPE/USDT:USDT","BONK/USDT:USDT","WIF/USDT:USDT","FLOKI/USDT:USDT","BOME/USDT:USDT","POPCAT/USDT:USDT","MOG/USDT:USDT","BRETT/USDT:USDT"]
-
-MEM_FILE = "bot_perp_memory.json"
+MEMES = ["DOGE/USDT","SHIB/USDT","PEPE/USDT","BONK/USDT","WIF/USDT","FLOKI/USDT","ORDI/USDT","BOME/USDT","POPCAT/USDT","MOG/USDT","BRETT/USDT","MEME/USDT","TURBO/USDT","LADYS/USDT"]
 
 def get_rsi(sym, ex):
     try:
@@ -30,50 +24,45 @@ def get_rsi(sym, ex):
 ex = ccxt.bingx({
     'apiKey': API_KEY,
     'secret': API_SECRET,
-    'options': {'defaultType': 'swap'}
+    'options': {'defaultType': 'spot'}
 })
 
-print(f"CHASSEUR MEME {LEV}x {AMOUNT_USDT}$ TP {TP_ROE}% SL {SL_ROE}%")
+print(f"CHASSEUR SPOT SECURISE {AMOUNT_USDT}$ max {MAX_POS} coins")
 
+# 1. Vrai solde SPOT = securité anti-doublon
 try:
-    positions = ex.fetch_positions()
-    open_syms = []
-    for p in positions:
-        if float(p.get('contracts', 0)) == 0:
-            continue
-        sym = p['symbol']
-        if sym not in MEMES:
-            continue
-        open_syms.append(sym)
-        
-        # Securise les positions existantes si TP/SL manquant
-        try:
-            orders = ex.fetch_open_orders(sym)
-            if len(orders) < 2:
-                entry = float(p['entryPrice'])
-                side = p['side']
-                qty = float(p['contracts'])
-                tp_price = entry * (1 + TP_ROE/100/LEV) if side == 'long' else entry * (1 - TP_ROE/100/LEV)
-                sl_price = entry * (1 - SL_ROE/100/LEV) if side == 'long' else entry * (1 + SL_ROE/100/LEV)
-                if side == 'long':
-                    ex.create_order(sym, 'limit', 'sell', qty, tp_price, {'reduceOnly': True})
-                    ex.create_order(sym, 'stop', 'sell', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
-                else:
-                    ex.create_order(sym, 'limit', 'buy', qty, tp_price, {'reduceOnly': True})
-                    ex.create_order(sym, 'stop', 'buy', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
-                print(f"TP/SL POSE {sym}")
-            else:
-                print(f"TP/SL deja pose {sym}, skip")
-        except Exception as e:
-            print(f"Err TP/SL {sym}: {e}")
+    bal = ex.fetch_balance()
+    owned = []
+    for coin in [s.split('/')[0] for s in MEMES]:
+        if bal.get(coin, {}).get('total', 0) > 0.0001:
+            owned.append(coin)
+    print(f"Deja en Spot: {owned} ({len(owned)}/{MAX_POS})")
 
-    print(f"Positions MEME ouvertes ({len(open_syms)}/{MAX_POS}): {open_syms}")
+    if len(owned) >= MAX_POS:
+        print("MAX SPOT atteint, stop")
+        exit()
 
-    if len(open_syms) >= MAX_POS:
-        print("MAX atteint, pas de nouvel achat")
-    else:
-        # Scan RSI du plus bas au plus haut
-        all_rsi = []
-        for sym in MEMES:
-            if sym in open_syms:
-               
+    for sym in MEMES:
+        coin = sym.split('/')[0]
+        if coin in owned:
+            print(f"{sym} deja possede, skip")
+            continue
+
+        rsi = get_rsi(sym, ex)
+        print(f"{sym} RSI {rsi:.1f}")
+
+        if rsi < 35:
+            try:
+                price = ex.fetch_ticker(sym)['last']
+                qty = AMOUNT_USDT / price
+                print(f"ACHAT SPOT {sym} RSI {rsi:.1f} qty {qty}")
+                ex.create_market_buy_order(sym, qty)
+                owned.append(coin)
+                time.sleep(1)
+                if len(owned) >= MAX_POS:
+                    break
+            except Exception as e:
+                print(f"Err {sym}: {e}")
+
+except Exception as e:
+    print(f"Erreur globale spot: {e}")
