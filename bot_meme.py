@@ -1,81 +1,79 @@
-import ccxt, os, json, time
+import ccxt, os, time, json
 import pandas as pd
 
 API_KEY = os.getenv("BINGX_API_KEY")
 API_SECRET = os.getenv("BINGX_SECRET_KEY")
-AMOUNT_USDT = 5
-TP_PCT = 30.0
-SL_PCT = 15.0
-MEM_FILE = "bot_meme_memory.json"
-MEME_KEYWORDS = ["DOGE","SHIB","PEPE","BONK","WIF","FLOKI","MEME","BABY","BOME","MEW","POPCAT","BRETT","MOG","TURBO","LADYS","WOJAK","COQ","MYRO","WEN","PONKE","PEPE2","PORK","CAT","DOG","FROG","INU"]
 
-def get_rsi(s, ex):
+LEV = 5
+AMOUNT_USDT = 5
+TP_ROE = 40.0
+SL_ROE = 20.0
+MAX_POS = 5
+
+MEMES = ["DOGE/USDT:USDT","SHIB/USDT:USDT","PEPE/USDT:USDT","BONK/USDT:USDT","WIF/USDT:USDT","FLOKI/USDT:USDT","BOME/USDT:USDT","POPCAT/USDT:USDT","MOG/USDT:USDT","BRETT/USDT:USDT"]
+
+MEM_FILE = "bot_perp_memory.json"
+
+def get_rsi(sym, ex):
     try:
-        ohlcv = ex.fetch_ohlcv(s, '1h', limit=100)
+        ohlcv = ex.fetch_ohlcv(sym, '1h', limit=100)
         df = pd.DataFrame(ohlcv, columns=['t','o','h','l','c','v'])
         delta = df['c'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain/loss
-        return float((100 - (100/(1+rs))).iloc[-1])
-    except: return 50
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = -delta.where(delta < 0, 0).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return float(rsi.iloc[-1])
+    except:
+        return 50
 
-ex = ccxt.bingx({'apiKey': API_KEY, 'secret': API_SECRET, 'options': {'defaultType': 'spot'}})
-mem = json.load(open(MEM_FILE)) if os.path.exists(MEM_FILE) else {}
+ex = ccxt.bingx({
+    'apiKey': API_KEY,
+    'secret': API_SECRET,
+    'options': {'defaultType': 'swap'}
+})
 
-tickers = ex.fetch_tickers()
-balances = ex.fetch_balance()
-holdings = {k: v for k, v in balances.items() if isinstance(v, dict) and v.get('free',0) > 0}
+print(f"CHASSEUR MEME {LEV}x {AMOUNT_USDT}$ TP {TP_ROE}% SL {SL_ROE}%")
 
-all_memes = []
-for sym, t in tickers.items():
-    if '/USDT' in sym and ':USDT' not in sym:
-        base = sym.split('/')[0].upper()
-        if any(k in base for k in MEME_KEYWORDS):
-            all_memes.append((sym, t.get('quoteVolume',0)))
-
-print(f"CHASSEUR MEME FIX - {len(all_memes)} MEMES - Deja possede: {list(holdings.keys())[:10]}")
-
-for sym, vol in all_memes:
-    try:
-        base = sym.split('/')[0]
-        if base in holdings:
-            # Si tu possedes deja plus de 1$ de ce coin, on skip
-            try:
-                val = holdings[base]['free'] * ex.fetch_ticker(sym)['last']
-                if val > 1:
-                    print(f"{sym} deja en portefeuille {val:.2f}$ -> SKIP")
-                    continue
-            except: pass
-        if sym in mem:
+try:
+    positions = ex.fetch_positions()
+    open_syms = []
+    for p in positions:
+        if float(p.get('contracts', 0)) == 0:
             continue
+        sym = p['symbol']
+        if sym not in MEMES:
+            continue
+        open_syms.append(sym)
+        
+        # Securise les positions existantes si TP/SL manquant
+        try:
+            orders = ex.fetch_open_orders(sym)
+            if len(orders) < 2:
+                entry = float(p['entryPrice'])
+                side = p['side']
+                qty = float(p['contracts'])
+                tp_price = entry * (1 + TP_ROE/100/LEV) if side == 'long' else entry * (1 - TP_ROE/100/LEV)
+                sl_price = entry * (1 - SL_ROE/100/LEV) if side == 'long' else entry * (1 + SL_ROE/100/LEV)
+                if side == 'long':
+                    ex.create_order(sym, 'limit', 'sell', qty, tp_price, {'reduceOnly': True})
+                    ex.create_order(sym, 'stop', 'sell', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
+                else:
+                    ex.create_order(sym, 'limit', 'buy', qty, tp_price, {'reduceOnly': True})
+                    ex.create_order(sym, 'stop', 'buy', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
+                print(f"TP/SL POSE {sym}")
+            else:
+                print(f"TP/SL deja pose {sym}, skip")
+        except Exception as e:
+            print(f"Err TP/SL {sym}: {e}")
 
-        rsi = get_rsi(sym, ex)
-        price = ex.fetch_ticker(sym)['last']
-        print(f"{sym} RSI {rsi:.1f} Prix {price}")
+    print(f"Positions MEME ouvertes ({len(open_syms)}/{MAX_POS}): {open_syms}")
 
-        if rsi < 35:
-            qty = AMOUNT_USDT / price
-            order = ex.create_order(sym, 'market', 'buy', qty, None, {'quoteOrderQty': AMOUNT_USDT})
-            print(f"ACHAT {sym} pour {AMOUNT_USDT}$")
-            time.sleep(0.8)
-            # On recupere la quantite reelle
-            bal2 = ex.fetch_balance()
-            qty_real = bal2[base]['free'] if base in bal2 else qty
-
-            tp = price * (1 + TP_PCT/100)
-            sl = price * (1 - SL_PCT/100)
-            try:
-                ex.create_limit_sell_order(sym, qty_real, tp)
-                ex.create_order(sym, 'STOP_LOSS_LIMIT', 'sell', qty_real, sl, {'stopPrice': sl})
-                print(f"TP/SL pose {sym} TP {tp} SL {sl}")
-            except Exception as e:
-                print(f"Erreur TP/SL {sym}: {e}")
-
-            mem[sym] = {"entry": price, "rsi": rsi}
-            time.sleep(0.5)
-    except Exception as e:
-        print(f"Err {sym}: {e}")
-
-with open(MEM_FILE, 'w') as f:
-    json.dump(mem, f, indent=2)
+    if len(open_syms) >= MAX_POS:
+        print("MAX atteint, pas de nouvel achat")
+    else:
+        # Scan RSI du plus bas au plus haut
+        all_rsi = []
+        for sym in MEMES:
+            if sym in open_syms:
+               
