@@ -12,6 +12,8 @@ SYMS=[
 TF='5m'
 LEV=10
 RISK=0.15
+SL=0.03
+TP=0.06
 def tg(m):
  try:
   u=f"https://api.telegram.org/bot{T}/sendMessage"
@@ -56,11 +58,7 @@ for SYM in SYMS:
  amt=ex.amount_to_precision(SYM,amt)
  if long_c:
   ex.create_market_buy_order(SYM,amt)
-  tg(f"🚀 LONG x{LEV} {SYM} {price}")
-  break
- if short_c:
-  ex.create_market_sell_order(SYM,amt)
-  tg(f"🔻 SHORT x{LEV} {SYM} {price}")
-  break
-else:
- tg("No signal "+msg)
+  sl=price*(1-SL)
+  tp=price*(1+TP)
+  try:
+   ex.create_order(SYM,'
