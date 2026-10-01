@@ -1,40 +1,50 @@
-import os, ccxt, requests
-TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID=os.getenv("TELEGRAM_CHAT_ID")
-BINGX_API_KEY=os.getenv("BINGX_API_KEY")
-BINGX_SECRET=os.getenv("BINGX_SECRET_KEY") or os.getenv("BINGX_SECRET")
+import os, requests, ccxt, traceback
+from datetime import datetime
 
-def send_tg(msg):
-    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT = os.getenv("TELEGRAM_CHAT_ID")
+API_KEY = os.getenv("BINGX_API_KEY")
+SECRET = os.getenv("BINGX_SECRET_KEY") or os.getenv("BINGX_SECRET")
+
+def send(msg):
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, json={"chat_id": CHAT, "text": msg, "parse_mode": "Markdown"}, timeout=10)
+        print(f"TELEGRAM OK: {msg[:100]}")
+    except Exception as e:
+        print(f"TELEGRAM ERR: {e}")
+
+print(f"START PNL {datetime.now()}")
+if not TOKEN or not CHAT:
+    print("TOKEN/CHAT manquant")
+    exit(1)
 
 try:
-    ex_spot=ccxt.bingx({'apiKey':BINGX_API_KEY,'secret':BINGX_SECRET,'options':{'defaultType':'spot'}})
-    ex_fut=ccxt.bingx({'apiKey':BINGX_API_KEY,'secret':BINGX_SECRET,'options':{'defaultType':'swap'}})
-
-    bal_spot=ex_spot.fetch_balance()
-    usdt_spot=bal_spot.get('USDT',{}).get('free',0)
-
-    bal_fut=ex_fut.fetch_balance()
-    usdt_fut=bal_fut.get('USDT',{}).get('free',0)
-
-    positions=ex_fut.fetch_positions()
-    msg="📊 *BRIEFING 8H - TOP 5 BOT*\n\n"
-    msg+=f"💰 Spot USDT libre: {usdt_spot:.2f}$\n"
-    msg+=f"💰 Futures USDT libre: {usdt_fut:.2f}$\n\n"
-
-    pnl_total=0
-    open_pos=0
+    ex = ccxt.bingx({'apiKey': API_KEY, 'secret': SECRET, 'options': {'defaultType': 'swap'}})
+    positions = ex.fetch_positions()
+    total_pnl = 0
+    lines = []
     for p in positions:
-        if float(p.get('contracts',0))>0:
-            open_pos+=1
-            pnl=float(p.get('unrealizedPnl',0))
-            pnl_total+=pnl
-            sym=p['symbol']
-            msg+=f"📈 {sym}: {pnl:.2f}$ PnL\n"
+        if float(p.get('contracts', 0)) == 0: continue
+        sym = p['symbol']
+        pnl = float(p.get('unrealizedPnl', 0))
+        roe = float(p.get('percentage', 0))
+        total_pnl += pnl
+        lines.append(f"{sym}: {pnl:.2f}$ ({roe:.1f}%)")
 
-    msg+=f"\n🔥 PnL Total ouvert: {pnl_total:.2f}$ ({open_pos} pos)\n"
-    msg+=f"⏰ ZEC LONG toujours en cours"
-    send_tg(msg)
+    bal = ex.fetch_balance()
+    usdt = bal.get('USDT', {}).get('total', 0)
+
+    msg = f"📊 *Daily P&L {datetime.now().strftime('%d/%m %H:%M')}*\n\n"
+    msg += f"Balance: {usdt:.2f} USDT\n"
+    msg += f"PNL total: {total_pnl:.2f}$\n\n"
+    if lines:
+        msg += "\n".join(lines[:15])
+    else:
+        msg += "Aucune position ouverte"
+
+    send(msg)
 
 except Exception as e:
-    send_tg(f"❌ Erreur bot_pnl.py: {e}")
+    print(traceback.format_exc())
+    send(f"⚠️ Erreur bot_pnl.py:\n{e}")
