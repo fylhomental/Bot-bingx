@@ -16,7 +16,9 @@ jobs:
       - run: pip install ccxt requests
       - run: python bot_pnl.py
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
-          BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
+  BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
+  BINGX_SECRET_KEY: ${{ secrets.BINGX_SECRET }}
+  BINGX_API_SECRET: ${{ secrets.BINGX_SECRET }}
