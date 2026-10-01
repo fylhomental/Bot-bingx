@@ -1,4 +1,5 @@
-import os, requests, ccxt, traceback
+SECRET = os.getenv("BINGX_SECRET_KEY") or os.getenv("BINGX_SECRET") or os.getenv("BINGX_API_SECRET")
+print(f"SECRET len={len(SECRET) if SECRET else 0}")import os, requests, ccxt, traceback
 from datetime import datetime
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN").strip()
