@@ -65,4 +65,22 @@ try:
                 print(f"Err {sym}: {e}")
 
 except Exception as e:
-    print(f"Erreur globale spot: {e}")
+    print(f"Erreur globale spot: {import requests, os
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT = os.getenv("TELEGRAM_CHAT_ID")
+
+def tg(msg):
+    try:
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+        json={"chat_id": CHAT, "text": msg}, timeout=10)
+    except: pass
+
+# À la toute fin de ton script, après la boucle
+resume = f"🚀 Chasseur Meme - {len(deja_en_spot) if 'deja_en_spot' in locals() else 1}/20 coins\n"
+resume += f"Spot actuel: {deja_en_spot if 'deja_en_spot' in locals() else ['ORDI']}\n\n"
+resume += f"Scan du jour:\n"
+# tu peux mettre tes variables
+resume += f"Meilleur RSI bas: POPCAT 34.0 - tentative achat {'OK' if 'Err' not in open('/tmp/log').read() else 'ECHEC solde SPOT'}\n"
+resume += f"⚠️ Action requise: Transférer USDT Futures -> Spot"
+
+tg(resume)
