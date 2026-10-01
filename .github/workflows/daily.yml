@@ -1,12 +1,12 @@
-name: Daily P&L
+name: Daily Briefing
 
 on:
   schedule:
-    - cron: '0 23 * * *'
+    - cron: '0 23 * * *'  # 08:00 Tokyo
   workflow_dispatch:
 
 jobs:
-  pnl:
+  briefing:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,8 +14,19 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install ccxt requests
-      - name: Run PNL bot
+
+      - name: 1. P&L BingX
         run: python bot_pnl.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
+          BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
+          BINGX_SECRET_KEY: ${{ secrets.BINGX_SECRET_KEY }}
+          BINGX_API_SECRET: ${{ secrets.BINGX_API_SECRET }}
+
+      - name: 2. Chasseur Meme Coins
+        run: python bot_meme.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
