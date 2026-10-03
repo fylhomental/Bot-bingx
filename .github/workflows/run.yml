@@ -19,3 +19,10 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python bot_fylho_perp.py
+      - name: Save memory
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@bot.com"
+          git add -f bot_fylho_perp_memory.json || true
+          git commit -m "save memory" || true
+          git push || true
