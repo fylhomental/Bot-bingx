@@ -7,7 +7,8 @@ AMOUNT = 5
 LEV = 3 # baissé de 5 à 3 pour payer moins de funding
 TRAIL = 5.0 # 3% -> 5% pour laisser respirer
 STOP_LOSS = 8.0 # nouveau: coupe sec à -8%
-MEM_FILE = "bot_perp_memory.json"
+MEM_FILE =
+"bot_fylho_perp_memory.json"
 MIN_VOL = 1000000 # ignore les merdes illiquides
 
 def get_rsi(symbol, exchange):
