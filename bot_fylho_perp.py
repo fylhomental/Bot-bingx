@@ -79,13 +79,20 @@ for sym in SYMBOLS:
                 continue
             save_mem(memory)
 
-        if rsi<RSI_SEUIL and sym not in memory:
-            ex_fut.set_leverage(LEVERAGE, sym_fut)
+                if rsi<RSI_SEUIL and sym not in memory:
+            try:
+                ex_fut.set_leverage(LEVERAGE, sym_fut, params={'side': 'BOTH'})
+            except:
+                try:
+                    ex_fut.set_leverage(LEVERAGE, sym_fut, params={'side': 'LONG'})
+                    ex_fut.set_leverage(LEVERAGE, sym_fut, params={'side': 'SHORT'})
+                except:
+                    pass
             qty=(AMOUNT_USDT*LEVERAGE)/price
             ex_fut.create_market_buy_order(sym_fut, qty)
             memory[sym]={'entry':price,'high':price,'sl':price*(1-SL_PCT/100),'be_done':False}
             save_mem(memory)
-            send_tg(f"🚀 LONG REEL {sym} x{LEVERAGE} RSI {rsi:.1f}")
+            send_tg(f"🚀 LONG REEL {sym} x{LEVERAGE} entry {price:.4f} RSI {rsi:.1f}")
         else:
             if sym not in memory:
                 send_tg(f"⏳ {sym} RSI {rsi:.1f}")
