@@ -61,4 +61,34 @@ for sym in SYMBOLS:
     try:
         price,rsi=get_rsi_price(sym)
         sym_fut=sym+":USDT"
-        #... (le reste jusqu'à la fin)
+                # TRAILING pour les positions existantes
+        if sym in memory:
+            entry=memory[sym]['entry']
+            high=max(memory[sym].get('high',entry), price)
+            memory[sym]['high']=high
+            if price >= entry*(1+BE_TRIGGER/100) and not memory[sym].get('be_done'):
+                memory[sym]['sl']=entry
+                memory[sym]['be_done']=True
+                send_tg(f"🔒 {sym} BE à {entry:.4f}")
+            if price < high*(1-TRAILING_PCT/100) or price < memory[sym].get('sl', entry*(1-SL_PCT/100)):
+                qty=(AMOUNT_USDT*LEVERAGE)/price
+                ex_fut.create_market_sell_order(sym_fut, qty)
+                send_tg(f"💰 CLOSE {sym} {((price/entry-1)*100):.2f}%")
+                del memory[sym]
+                save_mem(memory)
+                continue
+            save_mem(memory)
+
+        if rsi<RSI_SEUIL and sym not in memory:
+            ex_fut.set_leverage(LEVERAGE, sym_fut)
+            qty=(AMOUNT_USDT*LEVERAGE)/price
+            ex_fut.create_market_buy_order(sym_fut, qty)
+            memory[sym]={'entry':price,'high':price,'sl':price*(1-SL_PCT/100),'be_done':False}
+            save_mem(memory)
+            send_tg(f"🚀 LONG REEL {sym} x{LEVERAGE} RSI {rsi:.1f}")
+        else:
+            if sym not in memory:
+                send_tg(f"⏳ {sym} RSI {rsi:.1f}")
+        time.sleep(2)
+    except Exception as e:
+        send_tg(f"❌ {sym} FUTURES: {e}")
