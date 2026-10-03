@@ -1,105 +1,120 @@
-import ccxt, os, time
+import ccxt, os, json, time
 import pandas as pd
 
 API_KEY = os.getenv("BINGX_API_KEY")
 API_SECRET = os.getenv("BINGX_SECRET_KEY")
+AMOUNT = 5
+LEV = 3 # baissé de 5 à 3 pour payer moins de funding
+TRAIL = 5.0 # 3% -> 5% pour laisser respirer
+STOP_LOSS = 8.0 # nouveau: coupe sec à -8%
+MEM_FILE = "bot_perp_memory.json"
+MIN_VOL = 1000000 # ignore les merdes illiquides
 
-LEV = 20
-AMOUNT_USDT = 36.70
-TP_ROE = 30.0
-SL_ROE = 15.0
-
-SYMBOLS = ["BTC/USDT:USDT","ETH/USDT:USDT","SOL/USDT:USDT","INJ/USDT:USDT","TAO/USDT:USDT"]
-
-def get_rsi(sym, ex):
+def get_rsi(symbol, exchange):
     try:
-        ohlcv = ex.fetch_ohlcv(sym, '1h', limit=100)
+        ohlcv = exchange.fetch_ohlcv(symbol, '1h', limit=100)
         df = pd.DataFrame(ohlcv, columns=['t','o','h','l','c','v'])
         delta = df['c'].diff()
-        gain = delta.where(delta > 0, 0).rolling(14).mean()
-        loss = -delta.where(delta < 0, 0).rolling(14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain/loss
+        rsi = 100 - (100/(1+rs))
         return float(rsi.iloc[-1])
     except:
         return 50
 
-ex = ccxt.bingx({
-    'apiKey': API_KEY,
-    'secret': API_SECRET,
+exchange = ccxt.bingx({
+    'apiKey': API_KEY, 'secret': API_SECRET,
+    'enableRateLimit': True,
     'options': {'defaultType': 'swap'}
 })
 
-print(f"CHASSEUR PERP {LEV}x TP {TP_ROE}% SL {SL_ROE}%")
+print("=== FYLHOMENTAL PERP V2 - TRAIL 5% + SL 8% ===")
+exchange.load_markets()
+tickers = exchange.fetch_tickers()
 
-try:
-    positions = ex.fetch_positions()
-    open_syms = []
+usdt_markets = []
+for sym, t in tickers.items():
+    if '/USDT' in sym and t.get('quoteVolume', 0) > MIN_VOL:
+        usdt_markets.append((sym, t['quoteVolume']))
 
-    for p in positions:
-        if float(p.get('contracts', 0)) == 0:
-            continue
-        
-        sym = p['symbol']
-        # On ne gere que les SYMBOLS voulus
-        if sym not in SYMBOLS:
-            continue
-            
-        open_syms.append(sym)
-        entry = float(p['entryPrice'])
-        side = p['side']
-        qty = float(p['contracts'])
+usdt_markets.sort(key=lambda x: x[1], reverse=True)
+TOP_100 = [x[0] for x in usdt_markets[:100]]
 
-        # Fix doublon : si TP/SL deja la, on skip
+print(f"Scanning {len(TOP_100)} marchés filtrés >1M vol")
+
+all_rsi = []
+for sym in TOP_100:
+    rsi = get_rsi(sym, exchange)
+    all_rsi.append((sym, rsi))
+    time.sleep(0.12)
+
+all_rsi.sort(key=lambda x: x[1])
+longs = [x for x in all_rsi if x[1] < 32][:4] # plus strict
+shorts = [x for x in all_rsi if x[1] > 68][:4]
+
+memory = json.load(open(MEM_FILE)) if os.path.exists(MEM_FILE) else {}
+
+# OUVERTURE
+for sym, rsi in longs + shorts:
+    if sym not in memory:
         try:
-            orders = ex.fetch_open_orders(sym)
-            if len(orders) >= 2:
-                print(f"TP/SL deja pose {sym}, skip")
-                continue
-        except:
-            pass
-
-        tp_price = entry * (1 + TP_ROE/100/LEV) if side == 'long' else entry * (1 - TP_ROE/100/LEV)
-        sl_price = entry * (1 - SL_ROE/100/LEV) if side == 'long' else entry * (1 + SL_ROE/100/LEV)
-
-        try:
-            if side == 'long':
-                ex.create_order(sym, 'limit', 'sell', qty, tp_price, {'reduceOnly': True})
-                ex.create_order(sym, 'stop', 'sell', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
+            side = "long" if (sym,rsi) in longs else "short"
+            try: exchange.set_leverage(LEV, sym)
+            except: pass
+            if side == "long":
+                exchange.create_market_buy_order(sym, AMOUNT)
             else:
-                ex.create_order(sym, 'limit', 'buy', qty, tp_price, {'reduceOnly': True})
-                ex.create_order(sym, 'stop', 'buy', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
-            print(f"TP/SL POSE {sym} TP {tp_price:.4f} SL {sl_price:.4f}")
-        except Exception as e:
-            print(f"Erreur TP/SL {sym}: {e}")
-
-    print(f"Positions ouvertes: {open_syms}")
-
-    for sym in SYMBOLS:
-        if sym in open_syms:
-            continue
-        try:
-            rsi = get_rsi(sym, ex)
-            print(f"{sym} RSI {rsi:.1f}")
-            if rsi < 35:
-                ex.set_leverage(LEV, sym)
-                try:
-                    ex.set_margin_mode('ISOLATED', sym)
-                except:
-                    pass
-                price = ex.fetch_ticker(sym)['last']
-                qty = AMOUNT_USDT * LEV / price
-                ex.create_market_buy_order(sym, qty)
-                print(f"ACHAT {sym} {qty} a {price}")
-                time.sleep(2)
-                
-                tp_price = price * (1 + TP_ROE/100/LEV)
-                sl_price = price * (1 - SL_ROE/100/LEV)
-                ex.create_order(sym, 'limit', 'sell', qty, tp_price, {'reduceOnly': True})
-                ex.create_order(sym, 'stop', 'sell', qty, sl_price, {'stopPrice': sl_price, 'reduceOnly': True})
-                print(f"TP/SL POSE apres achat {sym}")
+                exchange.create_market_sell_order(sym, AMOUNT)
+            price = exchange.fetch_ticker(sym)['last']
+            memory[sym] = {"side":side,"entry":price,"high":price,"low":price}
+            print(f"OPEN {side.upper()} {sym} RSI {rsi:.1f}")
         except Exception as e:
             print(f"Err {sym}: {e}")
 
-except Exception as e:
-    print(f"Erreur globale: {e}")
+# GESTION + TRAILING + STOP LOSS DUR
+for sym in list(memory.keys()):
+    try:
+        price = exchange.fetch_ticker(sym)['last']
+        p = memory[sym]
+        entry = p['entry']
+
+        # Calcul PnL %
+        pnl = ((price - entry)/entry*100) if p['side']=="long" else ((entry - price)/entry*100)
+        pnl = pnl * LEV # PnL avec levier
+
+        # 1. STOP LOSS DUR -8%
+        if pnl <= -STOP_LOSS:
+            if p['side']=="long":
+                exchange.create_market_sell_order(sym, AMOUNT)
+            else:
+                exchange.create_market_buy_order(sym, AMOUNT)
+            print(f"STOP LOSS {sym} {pnl:.2f}%")
+            del memory[sym]
+            continue
+
+        # 2. TRAILING 5%
+        if p['side'] == 'long':
+            if price > p['high']: p['high'] = price
+            if ((price - p['high'])/p['high']*100) <= -TRAIL:
+                exchange.create_market_sell_order(sym, AMOUNT)
+                print(f"CLOSE LONG TRAIL {sym} {pnl:.2f}%")
+                del memory[sym]
+        else:
+            if price < p['low']: p['low'] = price
+            if ((price - p['low'])/p['low']*100) >= TRAIL:
+                exchange.create_market_buy_order(sym, AMOUNT)
+                print(f"CLOSE SHORT TRAIL {sym} {pnl:.2f}%")
+                del memory[sym]
+    except Exception as e:
+        print(f"Gestion err {sym}: {e}")
+        # Si position plus sur BingX mais encore dans JSON -> nettoie
+        try:
+            pos = exchange.fetch_positions([sym])
+            if not pos or float(pos[0]['contracts'])==0:
+                del memory[sym]
+                print(f"CLEAN {sym} plus en position")
+        except: pass
+
+with open(MEM_FILE, 'w') as f:
+    json.dump(memory, f, indent=2)
