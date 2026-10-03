@@ -47,4 +47,18 @@ def get_rsi_price(s):
 ex_fut=ccxt.bingx({'apiKey':BINGX_API_KEY,'secret':BINGX_SECRET})
 memory=load_mem()
 
-#
+# GAGE DE PROTECTION : nettoie memory si plus de position sur BingX
+try:
+    positions=ex_fut.fetch_positions()
+    open_syms=[p['symbol'] for p in positions if float(p.get('contracts',0))>0]
+    for sym in list(memory.keys()):
+        if sym+":USDT" not in open_syms and sym not in open_syms:
+            del memory[sym]
+    save_mem(memory)
+except: pass
+
+for sym in SYMBOLS:
+    try:
+        price,rsi=get_rsi_price(sym)
+        sym_fut=sym+":USDT"
+        #... (le reste jusqu'à la fin)
