@@ -6,9 +6,9 @@ LEVERAGE = 5
 AMOUNT_USDT = 10
 RSI_SEUIL = 35
 RSI_PERIOD = 14
-SL_PCT = 8.0
-TRAILING_PCT = 5.0
-BE_PCT = 2.0
+SL_PCT = 8.0 # Stop Loss -8%
+TRAILING_PCT = 3.5 # Vente si -3.5% du plus haut
+BE_PCT = 1.5 # Passage en no-loss à +1.5%
 
 MEM_FILE = "bot_fylho_perp_memory.json"
 
@@ -47,7 +47,7 @@ def get_rsi(exchange, symbol):
         return 100 - (100 / (1+rs))
     except: return 50
 
-# --- MAIN ---
+# Connexion Bitget
 exchange = ccxt.bitget({
     'apiKey': os.getenv('BITGET_API_KEY'),
     'secret': os.getenv('BITGET_SECRET'),
@@ -58,15 +58,57 @@ exchange = ccxt.bitget({
 mem = load_mem()
 print(f"[{datetime.now()}] START SL={SL_PCT}% BE={BE_PCT}% TRAIL={TRAILING_PCT}%")
 
+# 1. GESTION DES POSITIONS OUVERTES (SL / BE / TRAILING = TP)
+try:
+    positions = exchange.fetch_positions()
+    for pos in positions:
+        sym = pos['symbol']
+        if pos['contracts'] > 0:
+            entry = pos['entryPrice']
+            mark = pos['markPrice']
+            pnl_pct = ((mark - entry) / entry * 100) * (1 if pos['side']=='long' else -1)
+
+            # Recup memoire du plus haut
+            if sym not in mem: mem[sym] = {}
+            highest = mem[sym].get('highest', entry)
+            if mark > highest: highest = mark
+            mem[sym]['highest'] = highest
+
+            print(f"{sym} PnL={pnl_pct:.2f}% High={highest}")
+
+            # SL -8%
+            if pnl_pct <= -SL_PCT:
+                print(f"SL HIT {sym}")
+                exchange.create_market_order(sym, 'sell', pos['contracts'])
+                send_tg(f"🔴 SL -8% {sym} PnL {pnl_pct:.2f}%")
+                if sym in mem: del mem[sym]
+            # BE + TRAILING = TP
+            elif pnl_pct >= BE_PCT:
+                # Si on est en BE, on ne revend que si on retrace de TRAILING_PCT depuis le plus haut
+                drop_from_high = (highest - mark) / highest * 100
+                if drop_from_high >= TRAILING_PCT:
+                    print(f"TRAILING TP HIT {sym}")
+                    exchange.create_market_order(sym, 'sell', pos['contracts'])
+                    send_tg(f"🟢 TP Trailing {sym} +{pnl_pct:.2f}%")
+                    if sym in mem: del mem[sym]
+except Exception as e:
+    print(f"ERR pos: {e}")
+
+# 2. ENTREES RSI
 for sym in SYMBOLS:
     try:
         rsi = get_rsi(exchange, sym)
         print(f"{sym} RSI={rsi:.1f}")
-        if rsi < RSI_SEUIL and sym not in mem:
-            print(f"BUY {sym}")
-            # logique d'achat ici
-            mem[sym] = {"entry": time.time(), "rsi": rsi}
-            send_tg(f"BUY {sym} RSI {rsi:.1f} SL {SL_PCT}%")
+        has_pos = any(p['symbol']==sym and p['contracts']>0 for p in exchange.fetch_positions())
+        if rsi < RSI_SEUIL and not has_pos:
+            print(f"BUY {sym} RSI {rsi}")
+            # Logique achat avec levier 5x
+            price = exchange.fetch_ticker(sym)['last']
+            qty = (AMOUNT_USDT * LEVERAGE) / price
+            exchange.set_leverage(LEVERAGE, sym)
+            exchange.create_market_order(sym, 'buy', qty)
+            mem[sym] = {"entry": price, "highest": price, "rsi": rsi}
+            send_tg(f"🟡 BUY {sym} RSI {rsi:.1f} | SL {SL_PCT}% BE {BE_PCT}% Trail {TRAILING_PCT}%")
     except Exception as e:
         print(f"ERR {sym}: {e}")
 
