@@ -52,7 +52,7 @@ exchange = ccxt.bingx({
     'apiKey': os.getenv('BINGX_API_KEY'),
     'secret': os.getenv('BINGX_SECRET_KEY'),
     'options': {'defaultType': 'swap'}
-}
+})
 
 mem = load_mem()
 print(f"[{datetime.now()}] BINGX START SL={SL_PCT}% BE={BE_PCT}% TRAIL={TRAILING_PCT}%")
