@@ -1,8 +1,9 @@
 name: Run FYLHO PERP UNIVERSAL
 on:
-  workflow_dispatch:
   schedule:
     - cron: '*/15 * * * *'
+  workflow_dispatch:
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -11,18 +12,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - run: pip install ccxt requests pandas
-      - name: Run FYLHO PERP UNIVERSAL
+      - run: pip install ccxt requests
+      - name: Run python bot_fylho_perp.py
         env:
           BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
-          BINGX_SECRET_KEY: ${{ secrets.BINGX_SECRET_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python bot_fylho_perp.py
-      - name: Save memory
-        run: |
-          git config user.name "bot"
-          git config user.email "bot@bot.com"
-          git add -f bot_fylho_perp_memory.json || true
-          git commit -m "save memory" || true
-          git push || true
