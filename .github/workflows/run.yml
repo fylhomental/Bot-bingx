@@ -15,5 +15,5 @@ jobs:
       - name: Run python bot_fylho_perp.py
         env:
           BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
-          BINGX_SECRET: ${{ secrets.BINGX_SECRET }}
+          BINGX_SECRET_KEY: ${{ secrets.BINGX_SECRET_KEY }}
         run: python bot_fylho_perp.py
