@@ -24,37 +24,49 @@ usdt=ex.fetch_balance()['USDT']['free']
 poses=[p for p in ex.fetch_positions() if float(p.get('contracts',0))>0]
 print(f"Solde {usdt:.2f} Positions {len(poses)}")
 
-if len(poses)>=1:
-    print("1 position max, on attend SL")
-else:
-    if usdt>5:
-        ticks=ex.fetch_tickers()
-        coins=[s for s in ticks if ':USDT' in s and ticks[s]['last'] and ticks[s]['last']<5 and 'GOLD' not in s]
-        coins=sorted(coins,key=lambda x:ticks[x]['quoteVolume'] or 0,reverse=True)[:50]
-        print(f"Scan {len(coins)} coins")
-        opened=False
-        for sym in coins:
-            if opened: break
-            if any(p['symbol']==sym for p in poses): continue
-            rsi=get_rsi(sym)
-            sig='buy' if rsi<35 else 'sell' if rsi>68 else None
-            if not sig: continue
-            print(f"SIGNAL {sig} {sym} RSI {rsi:.1f}")
-            try:
-                price=ex.fetch_ticker(sym)['last']
-                qty=float(ex.amount_to_precision(sym,(usdt*0.40)/price))
-                ex.create_market_order(sym,sig,qty)
-                print(f"ORDRE OK {sym} qty {qty}")
-                opened=True
-                time.sleep(2)
-                sl=price*0.92 if sig=='buy' else price*1.08
-                try:
-                    ex.create_order(sym,'stop','sell' if sig=='buy' else 'buy',qty,None,{'stopPrice':sl})
-                    print(f"SL OK {sl}")
-                except Exception as e:
-                    print(f"SL err mais ordre deja pris {e}")
-                break
-            except Exception as e:
-                print(f"Err {sym} {e}")
-                continue
+# Si position existe -> on pose le SL dessus
+for p in poses:
+    sym=p['symbol']
+    side='sell' if p['side']=='long' else 'buy'
+    qty=float(p['contracts'])
+    entry=float(p.get('entryPrice',0) or ex.fetch_ticker(sym)['last'])
+    sl=entry*0.92 if p['side']=='long' else entry*1.08
+    print(f"Pose SL pour {sym} entry {entry} sl {sl}")
+    try:
+        # Methode BingX correcte
+        ex.create_order(sym,'stop_market',side,qty,None,{'stopPrice':sl})
+        print(f"SL OK {sym} {sl}")
+    except Exception as e:
+        print(f"SL err1 {e}")
+        try:
+            ex.create_order(sym,'market',side,qty,None,{'stopPrice':sl,'type':'STOP_MARKET'})
+            print(f"SL OK2 {sl}")
+        except Exception as e2:
+            print(f"SL err2 {e2}")
+
+# Si 0 position, on ouvre 1 seule
+if len(poses)==0 and usdt>5:
+    ticks=ex.fetch_tickers()
+    coins=[s for s in ticks if ':USDT' in s and ticks[s]['last'] and ticks[s]['last']<5 and 'GOLD' not in s]
+    coins=sorted(coins,key=lambda x:ticks[x]['quoteVolume'] or 0,reverse=True)[:50]
+    print(f"Scan {len(coins)} coins")
+    for sym in coins:
+        if any(p['symbol']==sym for p in poses): continue
+        rsi=get_rsi(sym)
+        sig='buy' if rsi<35 else 'sell' if rsi>68 else None
+        if not sig: continue
+        print(f"SIGNAL {sig} {sym} RSI {rsi:.1f}")
+        try:
+            price=ex.fetch_ticker(sym)['last']
+            qty=float(ex.amount_to_precision(sym,(usdt*0.40)/price))
+            ex.create_market_order(sym,sig,qty)
+            print(f"ORDRE OK {sym} qty {qty}")
+            time.sleep(2)
+            sl=price*0.92 if sig=='buy' else price*1.08
+            ex.create_order(sym,'stop_market','sell' if sig=='buy' else 'buy',qty,None,{'stopPrice':sl})
+            print(f"SL OK {sl}")
+            break
+        except Exception as e:
+            print(f"Err {sym} {e}")
+            break
 print("DONE")
