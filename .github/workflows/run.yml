@@ -12,8 +12,8 @@ jobs:
         with:
           python-version: '3.10'
       - run: pip install ccxt requests
-      - name: Run python close_all.py
-        env:
-          BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
-          BINGX_SECRET_KEY: ${{ secrets.BINGX_SECRET_KEY }}
-        run: python close_all.py
+      -     - name: Run FYLHO bot
+    env:
+      BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
+      BINGX_SECRET_KEY: ${{ secrets.BINGX_SECRET_KEY }}
+    run: python bot_fylho_perp.py
