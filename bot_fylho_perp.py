@@ -24,7 +24,6 @@ usdt=ex.fetch_balance()['USDT']['free']
 poses=[p for p in ex.fetch_positions() if float(p.get('contracts',0))>0]
 print(f"Solde {usdt:.2f} Positions {len(poses)}")
 
-# Si deja 1 position, on ne fait rien
 if len(poses)>=1:
     print("1 position max, on attend SL")
 else:
@@ -48,10 +47,9 @@ else:
                 print(f"ORDRE OK {sym} qty {qty}")
                 opened=True
                 time.sleep(2)
-                # SL -8% sans price_to_precision pour ne pas bugger
                 sl=price*0.92 if sig=='buy' else price*1.08
                 try:
-                    ex.create_order(sym,'stop', 'sell' if sig=='buy' else 'buy', qty, None, {'stopPrice':sl})
+                    ex.create_order(sym,'stop','sell' if sig=='buy' else 'buy',qty,None,{'stopPrice':sl})
                     print(f"SL OK {sl}")
                 except Exception as e:
                     print(f"SL err mais ordre deja pris {e}")
@@ -59,5 +57,4 @@ else:
             except Exception as e:
                 print(f"Err {sym} {e}")
                 continue
-
 print("DONE")
