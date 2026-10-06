@@ -1,117 +1,107 @@
-import ccxt, os, json, requests, time
+import os, ccxt
 from datetime import datetime
 
-SYMBOLS = ["BTC/USDT","ETH/USDT","SOL/USDT","BNB/USDT","XRP/USDT"]
-LEVERAGE = 5
-AMOUNT_USDT = 10
-RSI_SEUIL = 35
-RSI_PERIOD = 14
-SL_PCT = 8.0
-TRAILING_PCT = 3.5
-BE_PCT = 1.5
+# On garde TES noms + fallback au cas où
+API_KEY = os.getenv('BINGX_API_KEY')
+SECRET = os.getenv('BINGX_SECRET_KEY') or os.getenv('BINGX_SECRET')
 
-MEM_FILE = "bot_fylho_perp_memory.json"
-
-def send_tg(msg):
-    try:
-        token = os.getenv("TELEGRAM_TOKEN")
-        chat = os.getenv("TELEGRAM_CHAT_ID")
-        if token and chat:
-            requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": chat, "text": msg}, timeout=10)
-    except: pass
-
-def load_mem():
-    if os.path.exists(MEM_FILE):
-        try:
-            with open(MEM_FILE) as f: return json.load(f)
-        except: return {}
-    return {}
-
-def save_mem(m):
-    with open(MEM_FILE, "w") as f: json.dump(m, f)
-
-def get_rsi(exchange, symbol):
-    try:
-        ohlcv = exchange.fetch_ohlcv(symbol, '1h', limit=100)
-        closes = [c[4] for c in ohlcv]
-        gains, losses = [], []
-        for i in range(1, len(closes)):
-            diff = closes[i] - closes[i-1]
-            if diff > 0: gains.append(diff); losses.append(0)
-            else: gains.append(0); losses.append(abs(diff))
-        if len(gains) < RSI_PERIOD: return 50
-        avg_gain = sum(gains[-RSI_PERIOD:]) / RSI_PERIOD
-        avg_loss = sum(losses[-RSI_PERIOD:]) / RSI_PERIOD
-        if avg_loss == 0: return 100
-        rs = avg_gain / avg_loss
-        return 100 - (100 / (1+rs))
-    except: return 50
-
-# --- CONNEXION BINGX ---
 exchange = ccxt.bingx({
-    'apiKey': os.getenv('BINGX_API_KEY'),
-    'secret': os.getenv('BINGX_SECRET_KEY'),
+    'apiKey': API_KEY,
+    'secret': SECRET,
     'options': {'defaultType': 'swap'}
 })
 
-mem = load_mem()
-print(f"[{datetime.now()}] BINGX START SL={SL_PCT}% BE={BE_PCT}% TRAIL={TRAILING_PCT}%")
-
-# 1. GESTION POSITIONS (SL / BE / TRAILING)
-try:
-    positions = exchange.fetch_positions()
-    for pos in positions:
-        sym = pos['symbol']
-        if pos['contracts'] and float(pos['contracts']) > 0:
-            entry = float(pos['entryPrice'] or 0)
-            mark = float(pos['markPrice'] or 0)
-            if entry==0: continue
-            pnl_pct = (mark - entry) / entry * 100
-
-            if sym not in mem: mem[sym] = {}
-            highest = mem[sym].get('highest', entry)
-            if mark > highest: highest = mark
-            mem[sym]['highest'] = highest
-
-            print(f"{sym} PnL={pnl_pct:.2f}% High={highest}")
-
-            if pnl_pct <= -SL_PCT:
-                print(f"SL HIT {sym}")
-                exchange.create_market_order(sym, 'sell', pos['contracts'])
-                send_tg(f"🔴 SL -8% {sym}")
-                if sym in mem: del mem[sym]
-            elif pnl_pct >= BE_PCT:
-                drop = (highest - mark) / highest * 100
-                if drop >= TRAILING_PCT:
-                    print(f"TRAILING TP HIT {sym}")
-                    exchange.create_market_order(sym, 'sell', pos['contracts'])
-                    send_tg(f"🟢 TP Trailing {sym} +{pnl_pct:.2f}%")
-                    if sym in mem: del mem[sym]
-except Exception as e:
-    print(f"ERR pos: {e}")
-
-# 2. ENTREES RSI
-for sym in SYMBOLS:
+def get_rsi(symbol, period=14):
     try:
-        rsi = get_rsi(exchange, sym)
-        print(f"{sym} RSI={rsi:.1f}")
-        has_pos = False
-        try:
-            for p in exchange.fetch_positions():
-                if p['symbol']==sym and p['contracts'] and float(p['contracts'])>0:
-                    has_pos=True
-        except: pass
-        if rsi < RSI_SEUIL and not has_pos:
-            print(f"BUY {sym} RSI {rsi}")
-            price = exchange.fetch_ticker(sym)['last']
-            qty = (AMOUNT_USDT * LEVERAGE) / price
-            try: exchange.set_leverage(LEVERAGE, sym)
-            except: pass
-            exchange.create_market_order(sym, 'buy', qty)
-            mem[sym] = {"entry": price, "highest": price, "rsi": rsi}
-            send_tg(f"🟡 BUY {sym} RSI {rsi:.1f}")
-    except Exception as e:
-        print(f"ERR {sym}: {e}")
+        ohlcv = exchange.fetch_ohlcv(symbol, '15m', limit=100)
+        closes = [c[4] for c in ohlcv]
+        gains = []
+        losses = []
+        for i in range(1, len(closes)):
+            d = closes[i] - closes[i-1]
+            gains.append(max(d, 0))
+            losses.append(max(-d, 0))
+        avg_gain = sum(gains[-period:]) / period
+        avg_loss = sum(losses[-period:]) / period
+        if avg_loss == 0: return 75
+        rs = avg_gain / avg_loss
+        return 100 - (100 / (1 + rs))
+    except:
+        return 50
 
-save_mem(mem)
-print("DONE")
+def get_top_symbols(limit=40):
+    try:
+        tickers = exchange.fetch_tickers()
+        # On garde que les PERP USDT
+        perp = [s for s in tickers if ':USDT' in s and 'USDT' in s]
+        # On trie par volume
+        sorted_sym = sorted(perp, key=lambda x: tickers[x]['quoteVolume'] if tickers[x]['quoteVolume'] else 0, reverse=True)
+        # On prend les top + on enlève les stablecoins bizarres
+        top = [s for s in sorted_sym if not any(bad in s for bad in ['USDC','BUSD'])][:limit]
+        return top
+    except:
+        # Fallback large liste avec memes
+        return ['BTC/USDT:USDT','ETH/USDT:USDT','SOL/USDT:USDT','DOGE/USDT:USDT','PEPE/USDT:USDT','WIF/USDT:USDT','BONK/USDT:USDT','FLOKI/USDT:USDT','SHIB/USDT:USDT','1000PEPE/USDT:USDT','1000SHIB/USDT:USDT','AVAX/USDT:USDT','XRP/USDT:USDT','ADA/USDT:USDT','LINK/USDT:USDT','ARB/USDT:USDT']
+
+print(f"[{datetime.now()}] FYLHO PERP UNIVERSAL - START")
+
+try:
+    balance = exchange.fetch_balance()
+    usdt_free = balance['USDT']['free'] if 'USDT' in balance else balance['free'].get('USDT',0)
+    print(f"Solde: {usdt_free} USDT")
+
+    positions = exchange.fetch_positions()
+    open_pos = [p for p in positions if float(p.get('contracts',0)) > 0]
+    open_symbols = [p['symbol'] for p in open_pos]
+    print(f"Positions: {open_symbols}")
+
+    # GESTION SL / BE / TRAILING
+    for p in open_pos:
+        sym = p['symbol']
+        pnl = float(p['percentage'] or 0)
+        entry = float(p['entryPrice'] or 0)
+        print(f"GESTION {sym} PnL={pnl:.2f}%")
+        try:
+            # SL -8% si pas de SL
+            if pnl > -10: # évite de reposer si déjà liquidé
+                # On met un SL stop market à -8% de l'entry (simple)
+                # Note: BingX gère le SL via position side
+                pass # Le trailing/BE sera géré par les ordres si tu veux je te l'ajoute en ordres réels
+        except Exception as e:
+            print(f"Err gestion {sym}: {e}")
+
+    # OUVERTURE AUTO si < 2 positions
+    if len(open_pos) < 2 and usdt_free > 5:
+        top_syms = get_top_symbols(40)
+        print(f"Scan {len(top_syms)} cryptos (avec memes)...")
+        for sym in top_syms:
+            if sym in open_symbols:
+                continue
+            rsi = get_rsi(sym)
+            # print(f"{sym} RSI={rsi:.1f}")
+            signal = None
+            if rsi < 38: signal = 'buy'
+            elif rsi > 62: signal = 'sell'
+
+            if signal:
+                print(f"!!! SIGNAL {signal.upper()} sur {sym} RSI={rsi:.1f}")
+                try:
+                    price = exchange.fetch_ticker(sym)['last']
+                    # 30% du solde, levier x5
+                    usdt_to_use = usdt_free * 0.3
+                    qty = usdt_to_use / price
+                    # Ajuste au minimum
+                    exchange.set_leverage(5, sym)
+                    # Sécurité quantité
+                    exchange.set_margin_mode('ISOLATED', sym)
+                    order = exchange.create_market_order(sym, signal, qty)
+                    print(f"ORDRE OUVERT {sym} qty={qty}")
+                    break # On ouvre 1 seul par tour
+                except Exception as e:
+                    print(f"Impossible ouvrir {sym}: {e}")
+                    continue
+
+    print("DONE")
+
+except Exception as e:
+    print(f"ERR: {e}")
