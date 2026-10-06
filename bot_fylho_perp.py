@@ -1,7 +1,6 @@
-import os, ccxt
+import os, ccxt, time
 from datetime import datetime
 
-# On garde TES noms + fallback au cas où
 API_KEY = os.getenv('BINGX_API_KEY')
 SECRET = os.getenv('BINGX_SECRET_KEY') or os.getenv('BINGX_SECRET')
 
@@ -11,97 +10,73 @@ exchange = ccxt.bingx({
     'options': {'defaultType': 'swap'}
 })
 
-def get_rsi(symbol, period=14):
+def get_rsi(symbol):
     try:
         ohlcv = exchange.fetch_ohlcv(symbol, '15m', limit=100)
         closes = [c[4] for c in ohlcv]
-        gains = []
-        losses = []
+        gains, losses = [], []
         for i in range(1, len(closes)):
-            d = closes[i] - closes[i-1]
-            gains.append(max(d, 0))
-            losses.append(max(-d, 0))
-        avg_gain = sum(gains[-period:]) / period
-        avg_loss = sum(losses[-period:]) / period
+            d = closes[i]-closes[i-1]
+            gains.append(max(d,0))
+            losses.append(max(-d,0))
+        avg_gain = sum(gains[-14:])/14
+        avg_loss = sum(losses[-14:])/14
         if avg_loss == 0: return 75
-        rs = avg_gain / avg_loss
-        return 100 - (100 / (1 + rs))
-    except:
-        return 50
+        rs = avg_gain/avg_loss
+        return 100 - (100/(1+rs))
+    except: return 50
 
-def get_top_symbols(limit=40):
+def get_top_symbols(limit=45):
     try:
         tickers = exchange.fetch_tickers()
-        # On garde que les PERP USDT
-        perp = [s for s in tickers if ':USDT' in s and 'USDT' in s]
-        # On trie par volume
-        sorted_sym = sorted(perp, key=lambda x: tickers[x]['quoteVolume'] if tickers[x]['quoteVolume'] else 0, reverse=True)
-        # On prend les top + on enlève les stablecoins bizarres
-        top = [s for s in sorted_sym if not any(bad in s for bad in ['USDC','BUSD'])][:limit]
+        perp = [s for s in tickers if ':USDT' in s]
+        sorted_sym = sorted(perp, key=lambda x: tickers[x]['quoteVolume'] or 0, reverse=True)
+        top = [s for s in sorted_sym if not any(b in s for b in ['USDC','BUSD'])][:limit]
         return top
     except:
-        # Fallback large liste avec memes
-        return ['BTC/USDT:USDT','ETH/USDT:USDT','SOL/USDT:USDT','DOGE/USDT:USDT','PEPE/USDT:USDT','WIF/USDT:USDT','BONK/USDT:USDT','FLOKI/USDT:USDT','SHIB/USDT:USDT','1000PEPE/USDT:USDT','1000SHIB/USDT:USDT','AVAX/USDT:USDT','XRP/USDT:USDT','ADA/USDT:USDT','LINK/USDT:USDT','ARB/USDT:USDT']
+        return ['BTC/USDT:USDT','ETH/USDT:USDT','SOL/USDT:USDT','DOGE/USDT:USDT','PEPE/USDT:USDT','WIF/USDT:USDT','BONK/USDT:USDT','FLOKI/USDT:USDT','SHIB/USDT:USDT','1000PEPE/USDT:USDT','1000SHIB/USDT:USDT','AVAX/USDT:USDT','XRP/USDT:USDT','ARB/USDT:USDT','LINK/USDT:USDT','MEME/USDT:USDT','ORDI/USDT:USDT']
 
-print(f"[{datetime.now()}] FYLHO PERP UNIVERSAL - START")
+print(f"[{datetime.now()}] FYLHO UNIVERSE MEME + SL REEL START")
 
 try:
     balance = exchange.fetch_balance()
-    usdt_free = balance['USDT']['free'] if 'USDT' in balance else balance['free'].get('USDT',0)
-    print(f"Solde: {usdt_free} USDT")
+    usdt_free = balance['USDT']['free']
+    print(f"Solde: {usdt_free:.2f} USDT")
 
     positions = exchange.fetch_positions()
     open_pos = [p for p in positions if float(p.get('contracts',0)) > 0]
-    open_symbols = [p['symbol'] for p in open_pos]
-    print(f"Positions: {open_symbols}")
+    open_syms = [p['symbol'] for p in open_pos]
+    print(f"Positions ouvertes: {open_syms}")
 
-    # GESTION SL / BE / TRAILING
-    for p in open_pos:
-        sym = p['symbol']
-        pnl = float(p['percentage'] or 0)
-        entry = float(p['entryPrice'] or 0)
-        print(f"GESTION {sym} PnL={pnl:.2f}%")
-        try:
-            # SL -8% si pas de SL
-            if pnl > -10: # évite de reposer si déjà liquidé
-                # On met un SL stop market à -8% de l'entry (simple)
-                # Note: BingX gère le SL via position side
-                pass # Le trailing/BE sera géré par les ordres si tu veux je te l'ajoute en ordres réels
-        except Exception as e:
-            print(f"Err gestion {sym}: {e}")
-
-    # OUVERTURE AUTO si < 2 positions
+    # Si 0-1 position -> cherche nouvelle entrée
     if len(open_pos) < 2 and usdt_free > 5:
-        top_syms = get_top_symbols(40)
-        print(f"Scan {len(top_syms)} cryptos (avec memes)...")
-        for sym in top_syms:
-            if sym in open_symbols:
-                continue
+        top = get_top_symbols(45)
+        print(f"Scan {len(top)} coins avec memes...")
+        for sym in top:
+            if sym in open_syms: continue
             rsi = get_rsi(sym)
-            # print(f"{sym} RSI={rsi:.1f}")
             signal = None
             if rsi < 38: signal = 'buy'
             elif rsi > 62: signal = 'sell'
+            if not signal: continue
 
-            if signal:
-                print(f"!!! SIGNAL {signal.upper()} sur {sym} RSI={rsi:.1f}")
-                try:
-                    price = exchange.fetch_ticker(sym)['last']
-                    # 30% du solde, levier x5
-                    usdt_to_use = usdt_free * 0.3
-                    qty = usdt_to_use / price
-                    # Ajuste au minimum
-                    exchange.set_leverage(5, sym)
-                    # Sécurité quantité
-                    exchange.set_margin_mode('ISOLATED', sym)
-                    order = exchange.create_market_order(sym, signal, qty)
-                    print(f"ORDRE OUVERT {sym} qty={qty}")
-                    break # On ouvre 1 seul par tour
-                except Exception as e:
-                    print(f"Impossible ouvrir {sym}: {e}")
-                    continue
+            print(f"SIGNAL {signal.upper()} {sym} RSI={rsi:.1f}")
+            try:
+                price = exchange.fetch_ticker(sym)['last']
+                usdt_use = usdt_free * 0.35 # 35% de 26$ ~ 9$
+                qty = usdt_use / price
+                qty = float(exchange.amount_to_precision(sym, qty))
 
-    print("DONE")
+                exchange.set_leverage(5, sym)
+                try: exchange.set_margin_mode('ISOLATED', sym)
+                except: pass
 
-except Exception as e:
-    print(f"ERR: {e}")
+                # OUVERTURE MARCHE
+                order = exchange.create_market_order(sym, signal, qty)
+                print(f"Ouvert {sym} {signal} qty={qty}")
+                time.sleep(2)
+
+                # RECUPERE PRIX D'ENTREE REEL
+                pos = [p for p in exchange.fetch_positions([sym]) if float(p.get('contracts',0))>0]
+                if not pos: continue
+                entry = float(pos
